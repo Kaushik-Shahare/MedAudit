@@ -28,6 +28,8 @@ var/
 *.egg
 pip-wheel-metadata/
 *.whl
+documents/
+/documents/
 
 # Django stuff:
 *.log

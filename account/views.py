@@ -6,7 +6,6 @@ from django.contrib.auth import get_user_model, login, logout
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import RegisterSerializer, LoginSerializer, ForgotPasswordSerializer, ProfileUpdateSerializer, UserProfileSerializer
-from .models import UserProfile
 
 User = get_user_model()
 

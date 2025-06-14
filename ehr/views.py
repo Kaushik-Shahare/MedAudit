@@ -1,8 +1,7 @@
-from django.shortcuts import render
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Document, AccessRequest, DoctorProfile, PatientProfile
+from .models import Document, AccessRequest
 from .serializers import DocumentSerializer, AccessRequestSerializer
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -20,10 +19,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if hasattr(user, 'patient_profile'):
-            return Document.objects.filter(patient=user.patient_profile)
-        elif hasattr(user, 'doctor_profile'):
-            approved_patients = AccessRequest.objects.filter(doctor=user.doctor_profile, is_approved=True).values_list('patient', flat=True)
+        if hasattr(user, 'profile') and user.profile.user_type.name == 'Patient':
+            return Document.objects.filter(patient=user.profile)
+        elif hasattr(user, 'profile') and user.profile.user_type.name == 'Doctor':
+            approved_patients = AccessRequest.objects.filter(doctor=user.profile, is_approved=True).values_list('patient', flat=True)
             return Document.objects.filter(patient__in=approved_patients, is_approved=True)
         elif user.is_staff:
             return Document.objects.all()
@@ -31,9 +30,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        if hasattr(user, 'doctor_profile'):
+        if hasattr(user, 'profile') and user.profile.user_type.name == 'Doctor':
             serializer.save(uploaded_by=user, is_approved=False)
-        elif hasattr(user, 'patient_profile'):
+        elif hasattr(user, 'profile') and user.profile.user_type.name == 'Patient':
             serializer.save(uploaded_by=user, is_approved=True)
         elif user.is_staff:
             serializer.save(uploaded_by=user, is_approved=True)
@@ -51,16 +50,16 @@ class AccessRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if hasattr(user, 'doctor_profile'):
-            return AccessRequest.objects.filter(doctor=user.doctor_profile)
+        if hasattr(user, 'profile') and user.profile.user_type.name == 'Doctor':
+            return AccessRequest.objects.filter(doctor=user.profile)
         elif user.is_staff:
             return AccessRequest.objects.all()
         return AccessRequest.objects.none()
 
     def perform_create(self, serializer):
         user = self.request.user
-        if hasattr(user, 'doctor_profile'):
-            serializer.save(doctor=user.doctor_profile, is_approved=False)
+        if hasattr(user, 'profile') and user.profile.user_type.name == 'Doctor':
+            serializer.save(doctor=user.profile, is_approved=False)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
     def approve(self, request, pk=None):
@@ -75,18 +74,18 @@ class PatientDocumentListCreateAPIView(APIView):
 
     def get(self, request):
         # List all documents for the authenticated patient
-        if not hasattr(request.user, 'patient_profile'):
+        if request.user.user_type.name != 'Patient':
             return Response({'detail': 'Only patients can view their documents.'}, status=status.HTTP_403_FORBIDDEN)
-        documents = Document.objects.filter(patient=request.user.patient_profile)
+        documents = Document.objects.filter(patient=request.user)
         serializer = DocumentSerializer(documents, many=True)
         return Response(serializer.data)
 
     def post(self, request):
         # Upload a new document for the authenticated patient
-        if not hasattr(request.user, 'patient_profile'):
+        if request.user.user_type.name != 'Patient':
             return Response({'detail': 'Only patients can upload documents.'}, status=status.HTTP_403_FORBIDDEN)
         data = request.data.copy()
-        data['patient'] = request.user.patient_profile.id
+        data['patient'] = request.user.id
         serializer = DocumentSerializer(data=data)
         if serializer.is_valid():
             serializer.save(uploaded_by=request.user, is_approved=True)
@@ -98,9 +97,9 @@ class PatientDocumentDeleteAPIView(APIView):
 
     def delete(self, request, pk):
         # Delete a document owned by the authenticated patient
-        if not hasattr(request.user, 'patient_profile'):
+        if request.user.user_type.name != 'Patient':
             return Response({'detail': 'Only patients can delete their documents.'}, status=status.HTTP_403_FORBIDDEN)
-        document = get_object_or_404(Document, pk=pk, patient=request.user.patient_profile)
+        document = get_object_or_404(Document, pk=pk, patient=request.user)
         document.delete()
         return Response({'detail': 'Document deleted.'}, status=status.HTTP_204_NO_CONTENT)
 
@@ -109,14 +108,14 @@ class DoctorPatientDocumentListAPIView(APIView):
 
     def get(self, request, user_id):
         # Doctor views patient documents if access is granted
-        if not hasattr(request.user, 'doctor_profile'):
+        if request.user.user_type.name != 'Doctor':
             return Response({'detail': 'Only doctors can view patient documents.'}, status=status.HTTP_403_FORBIDDEN)
         patient_user = get_object_or_404(User, pk=user_id)
-        if not hasattr(patient_user, 'patient_profile'):
+        if patient_user.user_type.name != 'Patient':
             return Response({'detail': 'User is not a patient.'}, status=status.HTTP_400_BAD_REQUEST)
-        access = AccessRequest.objects.filter(doctor=request.user.doctor_profile, patient=patient_user.patient_profile, is_approved=True).exists()
+        access = AccessRequest.objects.filter(doctor=request.user, patient=patient_user, is_approved=True).exists()
         if not access:
             return Response({'detail': 'Access not granted to this patient.'}, status=status.HTTP_403_FORBIDDEN)
-        documents = Document.objects.filter(patient=patient_user.patient_profile, is_approved=True)
+        documents = Document.objects.filter(patient=patient_user, is_approved=True)
         serializer = DocumentSerializer(documents, many=True)
         return Response(serializer.data)

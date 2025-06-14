@@ -53,15 +53,21 @@ class UserType(models.Model):
 
 
 class UserProfile(models.Model):
+    """Unified profile for all user types (Doctor, Patient, Nurse, Admin)."""
     user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='profile')
     name = models.CharField(max_length=255)
     location = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-    # Add more fields as needed (gender, dob, etc.)
-    # For hospital management, you can add department, specialization, etc. for staff
+    # Doctor-specific
+    specialization = models.CharField(max_length=255, blank=True, null=True)
+    # Patient-specific
+    date_of_birth = models.DateField(blank=True, null=True)
+    # Nurse-specific
+    department = models.CharField(max_length=255, blank=True, null=True)
+    # Add more fields as needed for your app
 
     def __str__(self):
-        return self.name
+        return f"{self.user.email} Profile"
 
 
 class User(AbstractBaseUser, PermissionsMixin):
