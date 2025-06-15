@@ -18,7 +18,7 @@ MedAudit is a comprehensive medical records management system designed to secure
 ### Technology Stack
 - **Framework**: Django (Python)
 - **API**: Django REST Framework
-- **Database**: SQLite3 (Development), PostgreSQL (Production ready)
+- **Database**: PostgreSQL (Neon serverless Postgres)
 - **File Storage**: Cloudinary
 - **Authentication**: JWT (JSON Web Tokens)
 
@@ -88,6 +88,7 @@ GET /api/generate-emergency-qr/{token}/ - Generate QR code for emergency access
 ### Prerequisites
 - Python 3.8+
 - Django 4.2+
+- PostgreSQL database (using Neon or local PostgreSQL)
 - Cloudinary account for document storage
 
 ### Installation
@@ -109,22 +110,39 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Apply migrations
+4. Configure database settings in MedAudit/settings.py
+```python
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "your_db_name",
+        "USER": "your_db_user",
+        "PASSWORD": "your_password",
+        "HOST": "your_host",
+        "PORT": "5432",
+        "OPTIONS": {
+            "sslmode": "require",  # For cloud-hosted PostgreSQL
+        },
+    }
+}
+```
+
+5. Apply migrations
 ```bash
 python manage.py migrate
 ```
 
-5. Create superuser
+6. Create superuser
 ```bash
 python manage.py createsuperuser
 ```
 
-6. Load initial user types
+7. Load initial user types
 ```bash
 python manage.py load_usertypes
 ```
 
-7. Run the development server
+8. Run the development server
 ```bash
 python manage.py runserver
 ```

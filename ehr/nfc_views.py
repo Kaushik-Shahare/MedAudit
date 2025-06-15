@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -33,6 +33,13 @@ class NFCCardViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         # Check if user already has a card
+        # Only Admin can create NFC cards for patients
+        if not self.request.user.is_staff:
+            raise serializers.ValidationError("Only admin can create NFC cards for patients")
+        # Ensure the patient does not already have an NFC card
+        if 'patient' not in serializer.validated_data:
+            raise serializers.ValidationError("Patient is required to create an NFC card")
+        # Check if the patient already has an NFC card
         if NFCCard.objects.filter(patient=serializer.validated_data['patient']).exists():
             raise serializers.ValidationError("User already has an NFC card")
         serializer.save()
