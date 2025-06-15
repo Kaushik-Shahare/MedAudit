@@ -1,14 +1,28 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import DocumentViewSet, AccessRequestViewSet, PatientDocumentListCreateAPIView, PatientDocumentDeleteAPIView, DoctorPatientDocumentListAPIView
+from .views import (DocumentViewSet, AccessRequestViewSet, PatientDocumentListCreateAPIView, 
+                   PatientDocumentDeleteAPIView, DoctorPatientDocumentListAPIView, PatientEmergencyDocsAPIView)
+from .nfc_views import (NFCCardViewSet, NFCSessionViewSet, verify_nfc_session, emergency_access,
+                      generate_nfc_qr_code, generate_emergency_qr_code)
 
+# Set up the regular API routers
 router = DefaultRouter()
 router.register(r'documents', DocumentViewSet, basename='document')
 router.register(r'access-requests', AccessRequestViewSet, basename='accessrequest')
+router.register(r'nfc-cards', NFCCardViewSet, basename='nfccard')
+router.register(r'nfc-sessions', NFCSessionViewSet, basename='nfcsession')
 
 urlpatterns = [
     path('', include(router.urls)),
+    # Patient document management
     path('patient/documents/', PatientDocumentListCreateAPIView.as_view(), name='patient-documents'),
     path('patient/documents/<int:pk>/', PatientDocumentDeleteAPIView.as_view(), name='patient-document-delete'),
+    path('patient/emergency-docs/', PatientEmergencyDocsAPIView.as_view(), name='patient-emergency-docs'),
     path('doctor/patient/<int:user_id>/documents/', DoctorPatientDocumentListAPIView.as_view(), name='doctor-patient-documents'),
+    
+    # NFC functionality
+    path('nfc/verify-session/', verify_nfc_session, name='verify-nfc-session'),
+    path('nfc/generate-qr/', generate_nfc_qr_code, name='generate-nfc-qr'),
+    path('emergency/generate-qr/', generate_emergency_qr_code, name='generate-emergency-qr'),
+    path('emergency-access/<str:token>/', emergency_access, name='emergency-access'),
 ] 

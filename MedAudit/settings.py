@@ -39,6 +39,9 @@ ALLOWED_HOSTS = []
 
 PROD = False
 
+# Site URL for generating absolute URLs
+SITE_URL = os.getenv('SITE_URL', 'http://localhost:8000')
+
 AUTH_USER_MODEL = 'account.User'
 
 # Application definition

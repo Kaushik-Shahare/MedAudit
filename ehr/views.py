@@ -1,13 +1,16 @@
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
-from .models import Document, AccessRequest
-from .serializers import DocumentSerializer, AccessRequestSerializer
+from .models import Document, AccessRequest, NFCCard, NFCSession, EmergencyAccess
+from .serializers import (DocumentSerializer, AccessRequestSerializer, NFCCardSerializer, 
+                         NFCSessionSerializer, EmergencyAccessSerializer, EmergencyDocumentSerializer)
 from django.utils import timezone
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
+import uuid
+from datetime import timedelta
 
 User = get_user_model()
 
@@ -27,6 +30,27 @@ class DocumentViewSet(viewsets.ModelViewSet):
         elif user.is_staff:
             return Document.objects.all()
         return Document.objects.none()
+    
+    @action(detail=True, methods=['post'])
+    def toggle_emergency_access(self, request, pk=None):
+        """Toggle a document as accessible in emergency situations."""
+        document = self.get_object()
+        
+        # Only allow patient or admin to toggle emergency access
+        if request.user != document.patient and not request.user.is_staff:
+            return Response(
+                {'detail': 'Only the patient or an admin can set emergency access permissions'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Toggle emergency access flag
+        document.is_emergency_accessible = not document.is_emergency_accessible
+        document.save()
+        
+        return Response({
+            'id': document.id,
+            'is_emergency_accessible': document.is_emergency_accessible
+        })
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -122,6 +146,45 @@ class PatientDocumentDeleteAPIView(APIView):
         document = get_object_or_404(Document, pk=pk, patient=request.user)
         document.delete()
         return Response({'detail': 'Document deleted.'}, status=status.HTTP_204_NO_CONTENT)
+        
+class PatientEmergencyDocsAPIView(APIView):
+    """View for patients to manage their emergency accessible documents."""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        # Patient can only view their own emergency documents
+        if request.user.user_type.name != 'Patient':
+            return Response({'detail': 'Only patients can access this view.'}, 
+                         status=status.HTTP_403_FORBIDDEN)
+        
+        # Get documents marked as emergency accessible
+        documents = Document.objects.filter(patient=request.user, is_emergency_accessible=True)
+        serializer = DocumentSerializer(documents, many=True)
+        return Response(serializer.data)
+    
+    def post(self, request):
+        # Set emergency accessible flag for multiple documents
+        if request.user.user_type.name != 'Patient':
+            return Response({'detail': 'Only patients can modify emergency access.'}, 
+                         status=status.HTTP_403_FORBIDDEN)
+        
+        document_ids = request.data.get('document_ids', [])
+        set_accessible = request.data.get('is_emergency_accessible', True)
+        
+        if not document_ids:
+            return Response({'detail': 'No document IDs provided.'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update all specified documents owned by the patient
+        updated = Document.objects.filter(
+            id__in=document_ids, 
+            patient=request.user
+        ).update(is_emergency_accessible=set_accessible)
+        
+        return Response({
+            'detail': f'Updated emergency access for {updated} documents.',
+            'is_emergency_accessible': set_accessible
+        })
 
 class DoctorPatientDocumentListAPIView(APIView):
     permission_classes = [IsAuthenticated]

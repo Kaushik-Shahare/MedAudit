@@ -1,0 +1,78 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block title %}NFC Card Management{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <h1>NFC Card Management</h1>
+  
+  <div class="module">
+    <h2>Create NFC Card</h2>
+    <form method="post" action="{% url 'admin:create_nfc_card' %}">
+      {% csrf_token %}
+      <div class="form-row">
+        <label for="patient">Patient:</label>
+        <select name="patient" id="patient" required>
+          <option value="">---------</option>
+          {% for patient in patients %}
+            <option value="{{ patient.id }}">{{ patient.email }} {% if patient.profile %}({{ patient.profile.name }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="submit-row">
+        <input type="submit" value="Create NFC Card" class="default">
+      </div>
+    </form>
+  </div>
+  
+  <div class="module">
+    <h2>Existing NFC Cards</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Patient</th>
+          <th>Card ID</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Last Used</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for card in nfc_cards %}
+          <tr>
+            <td>
+              {{ card.patient.email }}
+              {% if card.patient.profile %}
+                ({{ card.patient.profile.name }})
+              {% endif %}
+            </td>
+            <td>{{ card.card_id }}</td>
+            <td>{% if card.is_active %}Active{% else %}Inactive{% endif %}</td>
+            <td>{{ card.created_at }}</td>
+            <td>{{ card.last_used|default:"Never" }}</td>
+            <td>
+              {% if card.is_active %}
+                <form method="post" action="{% url 'admin:deactivate_nfc_card' card.id %}">
+                  {% csrf_token %}
+                  <input type="submit" value="Deactivate">
+                </form>
+              {% else %}
+                <form method="post" action="{% url 'admin:activate_nfc_card' card.id %}">
+                  {% csrf_token %}
+                  <input type="submit" value="Activate">
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6">No NFC cards have been created yet.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
