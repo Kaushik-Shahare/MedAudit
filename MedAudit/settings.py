@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 import os
+import cloudinary
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -47,18 +48,28 @@ REST_FRAMEWORK = {
     ),
 }
 
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "cloudinary_storage",  # Must come before django.contrib.staticfiles
     "django.contrib.staticfiles",
+    "rest_framework",
+    "corsheaders",
+    "rest_framework_simplejwt",
+    "cloudinary",
+    
     "account",
     "ehr",
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -142,86 +153,120 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Increase data upload limits for large medical files (set to 100MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100MB in bytes
+FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100MB in bytes
 
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'filters': {
-        'request_context': {
-            '()': 'MedAudit.logging_middleware.RequestContextFilter',
-        },
-        'exclude_autoreload': {
-            '()': 'MedAudit.logging_middleware.ExcludeAutoreloadFilter',
-        },
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Cloudinary settings for media files
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
+    'API_SECRET': os.getenv('CLOUDINARY_API_SECRET'),
+    'SECURE': True,
+    'MEDIA_TAG': 'media',
+    'INVALID_VIDEO_ERROR_MESSAGE': 'Invalid video file',
+    'INVALID_IMAGE_ERROR_MESSAGE': 'Invalid image file',
+    'RESOURCE_TYPES': {
+        'raw': ['.pdf', '.doc', '.docx', '.rtf', '.txt', '.xls', 
+                '.xlsx', '.ppt', '.pptx', '.odt', '.odp', '.ods', 
+                '.csv', '.json', '.yaml', '.yml', '.xml', '.html', 
+                '.htm', '.md', '.zip', '.rar', '.7z', '.tar', '.gz', 
+                '.bz2', '.mp4', '.mov', '.avi', '.wmv', '.flv', '.mpg', 
+                '.mpeg', '.m4v', '.3gp', '.webm'],
+        'image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.webp'],
     },
-    'formatters': {
-        'json': {
-            '()': 'pythonjsonlogger.json.JsonFormatter',
-            'format': '%(levelname)s %(asctime)s %(module)s %(message)s %(name)s %(process)d %(thread)d %(ip)s %(user_agent)s %(user_id)s %(username)s %(request_id)s %(type)s %(path)s %(status_code)d %(content_length)d',
-            'json_ensure_ascii': False,
-            'json_indent': None,
-        },
-        'verbose': {
-            'format': '%(levelname)s [%(asctime)s] %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s',
-            'datefmt': '%Y-%m-%d %H:%M:%S',
-        },
-        'simple': {
-            'format': '%(levelname)s [%(asctime)s] %(message)s',
-            'datefmt': '%Y-%m-%d %H:%M:%S',
-        },
-        'request': {
-            'format': '%(levelname)s [%(asctime)s] %(request_id)s %(username)s - %(message)s',
-            'datefmt': '%Y-%m-%d %H:%M:%S',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple' if not PROD else 'json',
-            'filters': ['request_context', 'exclude_autoreload'],
-        },
-        'file': {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(LOG_DIR, 'app.log'),
-            'formatter': 'verbose' if not PROD else 'json',
-            'filters': ['request_context', 'exclude_autoreload'],
-            'maxBytes': 100 * 1024 * 1024, # 100 MB
-            'backupCount': 10,
-            'delay': True,  # Add this to prevent immediate file creation
-        },
-        'request_file': {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(REQUEST_LOG_DIR, 'requests.log'),
-            'formatter': 'request' if not PROD else 'json',
-            'filters': ['request_context', 'exclude_autoreload'],
-            'maxBytes': 100 * 1024 * 1024, # 100 MB
-            'backupCount': 5,
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'django.db.backends': {
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'handlers': ['file'],
-            'propagate': False,
-        },
-        'django.request': {
-            'handlers': ['request_file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'referral': {  # Add app-specific logger for referral app
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG' if not PROD else 'INFO',
-            'propagate': False,
-        },
-    },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': 'DEBUG' if not PROD else 'INFO',
-    },
+    # Added settings for larger file uploads
+    'MAGIC_FILE_PATH': None,
+    'PREFIX': 'medaudit',
+    'MAX_SIZE': 100 * 1024 * 1024,  # 100MB in bytes
+    'CHUNK_SIZE': 10 * 1024 * 1024,  # 10MB chunks for large file uploads
 }
+
+# Use Cloudinary's RawMediaCloudinaryStorage for raw files like PDFs
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.RawMediaCloudinaryStorage'
+
+# LOGGING = {
+#     'version': 1,
+#     'disable_existing_loggers': False,
+#     'filters': {
+#         'request_context': {
+#             '()': 'MedAudit.logging_middleware.RequestContextFilter',
+#         },
+#         'exclude_autoreload': {
+#             '()': 'MedAudit.logging_middleware.ExcludeAutoreloadFilter',
+#         },
+#     },
+#     'formatters': {
+#         'json': {
+#             '()': 'pythonjsonlogger.json.JsonFormatter',
+#             'format': '%(levelname)s %(asctime)s %(module)s %(message)s %(name)s %(process)d %(thread)d %(ip)s %(user_agent)s %(user_id)s %(username)s %(request_id)s %(type)s %(path)s %(status_code)d %(content_length)d',
+#             'json_ensure_ascii': False,
+#             'json_indent': None,
+#         },
+#         'verbose': {
+#             'format': '%(levelname)s [%(asctime)s] %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s',
+#             'datefmt': '%Y-%m-%d %H:%M:%S',
+#         },
+#         'simple': {
+#             'format': '%(levelname)s [%(asctime)s] %(message)s',
+#             'datefmt': '%Y-%m-%d %H:%M:%S',
+#         },
+#         'request': {
+#             'format': '%(levelname)s [%(asctime)s] %(request_id)s %(username)s - %(message)s',
+#             'datefmt': '%Y-%m-%d %H:%M:%S',
+#         },
+#     },
+#     'handlers': {
+#         'console': {
+#             'class': 'logging.StreamHandler',
+#             'formatter': 'simple' if not PROD else 'json',
+#             'filters': ['request_context', 'exclude_autoreload'],
+#         },
+#         'file': {
+#             'class': 'logging.handlers.RotatingFileHandler',
+#             'filename': os.path.join(LOG_DIR, 'app.log'),
+#             'formatter': 'verbose' if not PROD else 'json',
+#             'filters': ['request_context', 'exclude_autoreload'],
+#             'maxBytes': 100 * 1024 * 1024, # 100 MB
+#             'backupCount': 10,
+#             'delay': True,  # Add this to prevent immediate file creation
+#         },
+#         'request_file': {
+#             'class': 'logging.handlers.RotatingFileHandler',
+#             'filename': os.path.join(REQUEST_LOG_DIR, 'requests.log'),
+#             'formatter': 'request' if not PROD else 'json',
+#             'filters': ['request_context', 'exclude_autoreload'],
+#             'maxBytes': 100 * 1024 * 1024, # 100 MB
+#             'backupCount': 5,
+#         },
+#     },
+#     'loggers': {
+#         'django': {
+#             'handlers': ['console', 'file'],
+#             'level': 'INFO',
+#             'propagate': False,
+#         },
+#         'django.db.backends': {
+#             'level': 'DEBUG' if DEBUG else 'INFO',
+#             'handlers': ['file'],
+#             'propagate': False,
+#         },
+#         'django.request': {
+#             'handlers': ['request_file'],
+#             'level': 'INFO',
+#             'propagate': False,
+#         },
+#         'referral': {  # Add app-specific logger for referral app
+#             'handlers': ['console', 'file'],
+#             'level': 'DEBUG' if not PROD else 'INFO',
+#             'propagate': False,
+#         },
+#     },
+#     'root': {
+#         'handlers': ['console', 'file'],
+#         'level': 'DEBUG' if not PROD else 'INFO',
+#     },
+# }

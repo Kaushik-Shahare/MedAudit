@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from cloudinary_storage.storage import RawMediaCloudinaryStorage
 
 # Create your models here.
 
@@ -7,7 +8,7 @@ class Document(models.Model):
     """Medical document belonging to a patient, uploaded by a user (doctor/patient/admin)."""
     patient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='documents')
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
-    file = models.FileField(upload_to='documents/')
+    file = models.FileField(upload_to='documents/', storage=RawMediaCloudinaryStorage())
     description = models.TextField(blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_approved = models.BooleanField(default=False)  # Admin approval

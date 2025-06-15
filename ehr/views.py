@@ -84,12 +84,32 @@ class PatientDocumentListCreateAPIView(APIView):
         # Upload a new document for the authenticated patient
         if request.user.user_type.name != 'Patient':
             return Response({'detail': 'Only patients can upload documents.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Create a copy of the request data
         data = request.data.copy()
         data['patient'] = request.user.id
+        
+        # Check if file is in the request
+        if 'file' not in request.FILES:
+            return Response({'detail': 'No file was uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate file size - additional check before serializer validation
+        file_obj = request.FILES['file']
+        if file_obj.size > 100 * 1024 * 1024:  # 100MB
+            return Response({'detail': 'File size exceeds the limit of 100MB.'}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        # Process with serializer
         serializer = DocumentSerializer(data=data)
         if serializer.is_valid():
-            serializer.save(uploaded_by=request.user, is_approved=True)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            try:
+                document = serializer.save(uploaded_by=request.user, is_approved=True)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                # Log the error for debugging
+                print(f"Error saving document: {str(e)}")
+                return Response({'detail': f'Error uploading file: {str(e)}'}, 
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class PatientDocumentDeleteAPIView(APIView):
