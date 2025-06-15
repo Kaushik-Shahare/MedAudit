@@ -23,9 +23,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if hasattr(user, 'profile') and user.user_type.name == 'Patient':
-            return Document.objects.filter(patient=user.profile)
+            return Document.objects.filter(patient=user)
         elif hasattr(user, 'profile') and user.user_type.name == 'Doctor':
-            approved_patients = AccessRequest.objects.filter(doctor=user.profile, is_approved=True).values_list('patient', flat=True)
+            approved_patients = AccessRequest.objects.filter(doctor=user, is_approved=True).values_list('patient', flat=True)
             return Document.objects.filter(patient__in=approved_patients, is_approved=True)
         elif user.is_staff:
             return Document.objects.all()
@@ -37,7 +37,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         document = self.get_object()
         
         # Only allow patient who owns the document or admin to toggle emergency access
-        if request.user.id != document.patient.id and not request.user.is_staff:
+        if request.user != document.patient and not request.user.is_staff:
             return Response(
                 {'detail': 'Only the patient or an admin can set emergency access permissions'},
                 status=status.HTTP_403_FORBIDDEN
@@ -55,9 +55,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user
         if hasattr(user, 'profile') and user.user_type.name == 'Doctor':
-            serializer.save(uploaded_by=user, is_approved=False)
+            serializer.save(uploaded_by=user, patient=user, is_approved=False)
         elif hasattr(user, 'profile') and user.user_type.name == 'Patient':
-            serializer.save(uploaded_by=user, is_approved=True)
+            serializer.save(uploaded_by=user, patient=user, is_approved=True)
         elif user.is_staff:
             serializer.save(uploaded_by=user, is_approved=True)
 
@@ -75,7 +75,7 @@ class AccessRequestViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if hasattr(user, 'profile') and user.user_type.name == 'Doctor':
-            return AccessRequest.objects.filter(doctor=user.profile)
+            return AccessRequest.objects.filter(doctor=user)
         elif user.is_staff:
             return AccessRequest.objects.all()
         return AccessRequest.objects.none()
@@ -83,7 +83,7 @@ class AccessRequestViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user
         if hasattr(user, 'profile') and user.user_type.name == 'Doctor':
-            serializer.save(doctor=user.profile, is_approved=False)
+            serializer.save(doctor=user, is_approved=False)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
     def approve(self, request, pk=None):
