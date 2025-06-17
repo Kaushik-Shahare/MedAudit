@@ -69,6 +69,10 @@ class NFCCardSerializer(serializers.ModelSerializer):
         model = NFCCard
         fields = ['id', 'card_id', 'patient', 'patient_name', 'is_active', 'created_at', 'last_used']
         read_only_fields = ['card_id', 'created_at']
+        lookup_field = 'card_id'
+        extra_kwargs = {
+            'url': {'lookup_field': 'card_id'}
+        }
         
     def get_patient_name(self, obj):
         if hasattr(obj.patient, 'profile'):

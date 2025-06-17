@@ -19,6 +19,7 @@ class NFCCardViewSet(viewsets.ModelViewSet):
     """ViewSet for managing NFC cards."""
     serializer_class = NFCCardSerializer
     permission_classes = [IsAuthenticated]
+    lookup_field = 'card_id'
     
     def get_queryset(self):
         try:
@@ -67,7 +68,7 @@ class NFCCardViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError(f"An unexpected error occurred: {str(e)}")
     
     @action(detail=True, methods=['post'], url_path='tap')
-    def tap_nfc_card(self, request, pk=None):
+    def tap_nfc_card(self, request, card_id=None):
         """Simulate tapping an NFC card to create a new session."""
         try:
             nfc_card = self.get_object()
@@ -97,7 +98,7 @@ class NFCCardViewSet(viewsets.ModelViewSet):
             return response
     
     @action(detail=True, methods=['post'], url_path='emergency-access')
-    def create_emergency_access(self, request, pk=None):
+    def create_emergency_access(self, request, card_id=None):
         """Create emergency access token for a patient's NFC card."""
         try:
             nfc_card = self.get_object()
