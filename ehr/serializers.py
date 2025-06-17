@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Document, AccessRequest, NFCCard, NFCSession, EmergencyAccess
 from django.contrib.auth import get_user_model
 import os
+from account.serializers import UserDetailSerializer
 
 User = get_user_model()
 
@@ -82,6 +83,7 @@ class NFCCardSerializer(serializers.ModelSerializer):
 class NFCSessionSerializer(serializers.ModelSerializer):
     patient_name = serializers.SerializerMethodField()
     accessed_by_name = serializers.SerializerMethodField()
+    accessed_by = UserDetailSerializer(read_only=True)
     valid = serializers.SerializerMethodField()
     
     class Meta:
