@@ -5,7 +5,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model, login, logout
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import RegisterSerializer, LoginSerializer, ForgotPasswordSerializer, ProfileUpdateSerializer, UserProfileSerializer
+from .serializers import RegisterSerializer, LoginSerializer, ForgotPasswordSerializer, ProfileUpdateSerializer, UserProfileSerializer, UserDetailSerializer
 from MedAudit.exception_handler import custom_exception_handler
 
 User = get_user_model()
@@ -47,6 +47,10 @@ class LoginView(APIView):
             if serializer.is_valid():
                 user = serializer.validated_data
                 refresh = RefreshToken.for_user(user)
+                
+                # Get user details using the UserDetailSerializer
+                user_serializer = UserDetailSerializer(user)
+                
                 return Response({
                     'status': True,
                     'code': status.HTTP_200_OK,
@@ -54,6 +58,7 @@ class LoginView(APIView):
                     'data': {
                         'refresh': str(refresh),
                         'access': str(refresh.access_token),
+                        'user': user_serializer.data
                     },
                 })
             return Response({
@@ -122,8 +127,8 @@ class ProfileUpdateView(APIView):
 
     def get(self, request):
         try:
-            profile = request.user.profile
-            serializer = UserProfileSerializer(profile)
+            user = request.user
+            serializer = UserDetailSerializer(user)
             return Response({
                 'status': True,
                 'code': status.HTTP_200_OK,

@@ -24,13 +24,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             user = self.request.user
-            if hasattr(user, 'profile') and user.user_type.name == 'Patient':
+            if user.is_staff:
+                return Document.objects.all()
+            elif hasattr(user, 'profile') and user.user_type.name == 'Patient':
                 return Document.objects.filter(patient=user)
             elif hasattr(user, 'profile') and user.user_type.name == 'Doctor':
                 approved_patients = AccessRequest.objects.filter(doctor=user, is_approved=True).values_list('patient', flat=True)
                 return Document.objects.filter(patient__in=approved_patients, is_approved=True)
-            elif user.is_staff:
-                return Document.objects.all()
             return Document.objects.none()
         except Exception as exc:
             # Log the error

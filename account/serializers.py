@@ -50,4 +50,15 @@ class LoginSerializer(serializers.Serializer):
         raise serializers.ValidationError('Invalid credentials')
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField() 
+    email = serializers.EmailField()
+
+class UserDetailSerializer(serializers.ModelSerializer):
+    user_type = serializers.SerializerMethodField()
+    profile = UserProfileSerializer(read_only=True)
+    
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'user_type', 'user_stage', 'profile']
+        
+    def get_user_type(self, obj):
+        return obj.user_type.name if obj.user_type else None
