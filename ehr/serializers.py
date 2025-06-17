@@ -81,18 +81,27 @@ class NFCCardSerializer(serializers.ModelSerializer):
 
 class NFCSessionSerializer(serializers.ModelSerializer):
     patient_name = serializers.SerializerMethodField()
+    accessed_by_name = serializers.SerializerMethodField()
     valid = serializers.SerializerMethodField()
     
     class Meta:
         model = NFCSession
-        fields = ['id', 'patient', 'patient_name', 'session_token', 'started_at', 
-                 'expires_at', 'is_active', 'valid']
-        read_only_fields = ['session_token', 'started_at', 'expires_at']
+        fields = ['id', 'patient', 'patient_name', 'accessed_by', 'accessed_by_name', 
+                 'session_type', 'session_token', 'started_at', 'expires_at', 
+                 'is_active', 'valid']
+        read_only_fields = ['session_token', 'started_at', 'expires_at', 'session_type']
         
     def get_patient_name(self, obj):
         if hasattr(obj.patient, 'profile'):
             return obj.patient.profile.name
         return obj.patient.email
+    
+    def get_accessed_by_name(self, obj):
+        if obj.accessed_by and hasattr(obj.accessed_by, 'profile'):
+            return obj.accessed_by.profile.name
+        elif obj.accessed_by:
+            return obj.accessed_by.email
+        return None
         
     def get_valid(self, obj):
         return obj.is_valid

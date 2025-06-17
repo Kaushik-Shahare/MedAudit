@@ -1,9 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (DocumentViewSet, AccessRequestViewSet, PatientDocumentListCreateAPIView, 
-                   PatientDocumentDeleteAPIView, DoctorPatientDocumentListAPIView, PatientEmergencyDocsAPIView)
+                   PatientDocumentDeleteAPIView, DoctorPatientDocumentListAPIView, PatientEmergencyDocsAPIView,
+                   nfc_session_documents)
 from .nfc_views import (NFCCardViewSet, NFCSessionViewSet, verify_nfc_session, emergency_access,
-                      generate_nfc_qr_code, generate_emergency_qr_code)
+                      generate_nfc_qr_code, generate_emergency_qr_code, tap_nfc_card_public)
 
 # Set up the regular API routers
 router = DefaultRouter()
@@ -23,6 +24,8 @@ urlpatterns = [
     # NFC functionality
     path('nfc/verify-session/', verify_nfc_session, name='verify-nfc-session'),
     path('nfc/generate-qr/', generate_nfc_qr_code, name='generate-nfc-qr'),
+    path('nfc/session/<str:session_token>/documents/', nfc_session_documents, name='nfc-session-documents'),
+    path('nfc/tap/<uuid:card_id>/', tap_nfc_card_public, name='universal-nfc-tap'),  # Single unified tap endpoint
     path('emergency/generate-qr/', generate_emergency_qr_code, name='generate-emergency-qr'),
     path('emergency-access/<str:token>/', emergency_access, name='emergency-access'),
 ] 

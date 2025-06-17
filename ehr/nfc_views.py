@@ -67,69 +67,20 @@ class NFCCardViewSet(viewsets.ModelViewSet):
             # Raise as validation error to be handled by DRF
             raise serializers.ValidationError(f"An unexpected error occurred: {str(e)}")
     
-    @action(detail=True, methods=['post'], url_path='tap')
-    def tap_nfc_card(self, request, card_id=None):
-        """Simulate tapping an NFC card to create a new session."""
-        try:
-            nfc_card = self.get_object()
-            
-            # Update last used timestamp
-            nfc_card.last_used = timezone.now()
-            nfc_card.save()
-            
-            # Create a new session (valid for 4 hours)
-            session = NFCSession.objects.create(patient=nfc_card.patient)
-            
-            # Return session data
-            serializer = NFCSessionSerializer(session)
-            return Response({
-                'status': True,
-                'code': status.HTTP_201_CREATED,
-                'message': 'NFC card tapped successfully, new session created',
-                'data': serializer.data
-            }, status=status.HTTP_201_CREATED)
-        except Exception as exc:
-            import logging
-            logger = logging.getLogger('django.request')
-            logger.error(f"Error in tap_nfc_card: {str(exc)}")
-            
-            # Use the custom exception handler
-            response = custom_exception_handler(exc, self.get_renderer_context())
-            return response
-    
-    @action(detail=True, methods=['post'], url_path='emergency-access')
-    def create_emergency_access(self, request, card_id=None):
-        """Create emergency access token for a patient's NFC card."""
-        try:
-            nfc_card = self.get_object()
-            
-            # Create emergency access token (valid for 24 hours)
-            emergency = EmergencyAccess.objects.create(
-                patient=nfc_card.patient,
-                expires_at=timezone.now() + timedelta(hours=24)
-            )
-            
-            # Return emergency access data
-            serializer = EmergencyAccessSerializer(emergency)
-            return Response({
-                'status': True,
-                'code': status.HTTP_201_CREATED,
-                'message': 'Emergency access token created successfully',
-                'data': serializer.data
-            }, status=status.HTTP_201_CREATED)
-        except Exception as exc:
-            import logging
-            logger = logging.getLogger('django.request')
-            logger.error(f"Error in create_emergency_access: {str(exc)}")
-            
-            # Use the custom exception handler
-            response = custom_exception_handler(exc, self.get_renderer_context())
-            return response
-
 class NFCSessionViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for viewing NFC sessions."""
     serializer_class = NFCSessionSerializer
     permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        """
+        Override permissions to allow unauthenticated access for retrieving session details.
+        This is needed for emergency access scenarios where users aren't logged in.
+        """
+        if self.action == 'retrieve':
+            # Allow anyone to retrieve session details by ID
+            return []
+        return super().get_permissions()
     
     def get_queryset(self):
         try:
@@ -202,11 +153,13 @@ def verify_nfc_session(request):
             session = NFCSession.objects.get(session_token=session_token)
             
             if session.is_valid:
-                # Return patient basic details
+                # Return patient basic details and session info
                 data = {
                     'valid': True,
                     'patient_id': session.patient.id,
-                    'expires_at': session.expires_at
+                    'expires_at': session.expires_at,
+                    'session_type': session.session_type,
+                    'documents_endpoint': f'/api/ehr/nfc/session/{session.session_token}/documents/'
                 }
                 
                 # Add patient name if available
@@ -404,3 +357,119 @@ def generate_emergency_qr_code(request):
         context = {'request': request, 'view': None}
         response = custom_exception_handler(exc, context)
         return response
+
+@api_view(['POST', 'GET'])  # Support both POST and GET for convenience
+@permission_classes([AllowAny])  # Allow anyone to tap an NFC card
+def tap_nfc_card_public(request, card_id):
+    """
+    Universal API endpoint for tapping an NFC card.
+    
+    - For anonymous users: Creates an emergency access session (limited to emergency documents)
+    - For doctors/admin: Creates a full access session (all patient documents)
+    - For patient: Creates a self-access session
+    - For other logged-in users: Creates an emergency session
+    
+    All accesses are logged for security and auditing purposes.
+    Sessions last 4 hours by default.
+    """
+    try:
+        # Log the request details for debugging
+        import logging
+        logger = logging.getLogger('django.request')
+        
+        # Try to get the NFCard
+        try:
+            nfc_card = NFCCard.objects.get(card_id=card_id)
+        except NFCCard.DoesNotExist:
+            return Response({
+                'status': False,
+                'code': status.HTTP_404_NOT_FOUND,
+                'message': f'NFC card with card_id={card_id} not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Update last used timestamp
+        nfc_card.last_used = timezone.now()
+        nfc_card.save()
+        
+        # Default to anonymous emergency access
+        session_type = 'anonymous'
+        accessed_by = None
+        
+        # Check if there's an authenticated user and determine access type
+        if hasattr(request, 'user') and request.user and request.user.is_authenticated:
+            accessed_by = request.user
+            logger.info(f"Authenticated NFC tap: User={request.user.email}, Card={card_id}")
+            
+            # Determine access type based on user role
+            if request.user.is_staff:
+                session_type = 'doctor'  # Staff members get full access
+                logger.info(f"Admin full access granted: {request.user.email}")
+                
+            elif hasattr(request.user, 'user_type') and request.user.user_type:
+                if request.user.user_type.name == 'Doctor':
+                    session_type = 'doctor'  # Doctors get full access
+                    logger.info(f"Doctor full access: {request.user.email}")
+                elif request.user == nfc_card.patient:
+                    session_type = 'patient'  # Patients accessing their own data
+                    logger.info(f"Patient self-access: {request.user.email}")
+                else:
+                    session_type = 'emergency'  # Other users get emergency access
+                    logger.info(f"Emergency access: {request.user.email} (type: {request.user.user_type.name})")
+            else:
+                # User without a specified type
+                if request.user == nfc_card.patient:
+                    session_type = 'patient'  # Patient self-access
+                else:
+                    session_type = 'emergency'  # Emergency access for others
+        else:
+            # Anonymous user access (no login)
+            logger.info(f"Anonymous emergency access to card: {card_id}")
+        
+        # Create the session with the determined access level
+        session = NFCSession.objects.create(
+            patient=nfc_card.patient,
+            accessed_by=accessed_by,
+            session_type=session_type
+        )
+        
+        # Return session data along with what kind of access was granted
+        serializer = NFCSessionSerializer(session)
+        
+        # Build response with appropriate access level information
+        response_data = {
+            'status': True,
+            'code': status.HTTP_201_CREATED,
+            'message': f'NFC card tapped successfully, {session_type} access granted',
+            'data': {
+                'session': serializer.data,
+                'access_type': session_type,
+                'documents_url': f'/api/ehr/nfc/session/{session.session_token}/documents/',
+                'expires_at': session.expires_at,
+                'access_level': 'Full access' if session_type in ['doctor', 'patient'] else 'Emergency access only'
+            }
+        }
+        
+        # Add patient profile information that's always accessible
+        if hasattr(nfc_card.patient, 'profile'):
+            profile = nfc_card.patient.profile
+            response_data['data']['patient'] = {
+                'name': getattr(profile, 'name', None),
+                'date_of_birth': getattr(profile, 'date_of_birth', None),
+                'phone_number': getattr(profile, 'phone_number', None)
+            }
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)
+        
+    except Exception as exc:
+        import logging
+        import traceback
+        logger = logging.getLogger('django.request')
+        logger.error(f"Error in NFC tap: {str(exc)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        return Response({
+            'status': False,
+            'code': status.HTTP_500_INTERNAL_SERVER_ERROR,
+            'message': 'An error occurred while processing the NFC tap',
+            'error': str(exc)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

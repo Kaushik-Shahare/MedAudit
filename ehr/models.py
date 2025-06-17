@@ -46,8 +46,17 @@ class NFCCard(models.Model):
 
 class NFCSession(models.Model):
     """Stores temporary session data when a patient taps their NFC card."""
+    SESSION_TYPE_CHOICES = [
+        ('doctor', 'Doctor Access'),
+        ('emergency', 'Emergency Access'),
+        ('anonymous', 'Anonymous Emergency Access'),
+        ('patient', 'Patient Self Access'),
+    ]
+    
     patient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='nfc_sessions')
+    accessed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='accessed_sessions')
     session_token = models.CharField(max_length=64, unique=True, default=secrets.token_urlsafe)
+    session_type = models.CharField(max_length=20, choices=SESSION_TYPE_CHOICES, default='patient')
     started_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     is_active = models.BooleanField(default=True)

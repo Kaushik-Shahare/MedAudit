@@ -436,3 +436,106 @@ class DoctorPatientDocumentListAPIView(APIView):
             # Use the custom exception handler from MedAudit
             response = custom_exception_handler(exc, self.get_renderer_context())
             return response
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Allow any user for emergency access
+def nfc_session_documents(request, session_token):
+    """
+    Unified endpoint to access patient documents based on an active NFC session.
+    Access level is determined by the session_type:
+    - doctor: Full access to all patient documents
+    - emergency: Access to emergency-marked documents only
+    - anonymous: Access to emergency-marked documents only
+    - patient: Full access to own documents
+    """
+    try:
+        # Try to get the active session
+        try:
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Check if session is valid
+            if not session.is_valid:
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_401_UNAUTHORIZED, 
+                    'message': 'NFC session has expired or is invalid.'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            # For authenticated users, verify that the user who created the session is making the request
+            # This prevents session hijacking, but doesn't apply to anonymous emergency access
+            if request.user.is_authenticated and session.accessed_by and session.accessed_by != request.user:
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_403_FORBIDDEN,
+                    'message': 'You are not authorized to access documents with this session.'
+                }, status=status.HTTP_403_FORBIDDEN)
+                
+            # Get documents based on session type
+            if session.session_type == 'doctor' or session.session_type == 'patient':
+                # Full access for doctors and patients accessing their own data
+                documents = Document.objects.filter(patient=session.patient, is_approved=True)
+                access_level = "Full Access"
+            else:
+                # Emergency access (for both registered and anonymous users)
+                documents = Document.objects.filter(
+                    patient=session.patient,
+                    is_approved=True,
+                    is_emergency_accessible=True
+                )
+                access_level = "Emergency Access Only"
+            
+            # Serialize and return documents
+            serializer = DocumentSerializer(documents, many=True)
+            
+            # Get patient information
+            patient_info = {
+                'patient_id': session.patient.id,
+                'email': session.patient.email
+            }
+            
+            # Add profile data if available
+            if hasattr(session.patient, 'profile'):
+                profile = session.patient.profile
+                patient_info.update({
+                    'name': getattr(profile, 'name', None),
+                    'date_of_birth': getattr(profile, 'date_of_birth', None),
+                    'phone_number': getattr(profile, 'phone_number', None),
+                    'location': getattr(profile, 'location', None)
+                })
+            
+            # Return a comprehensive response with patient info and documents
+            return Response({
+                'status': True,
+                'code': status.HTTP_200_OK,
+                'message': f'Documents retrieved with {session.session_type} access',
+                'data': {
+                    'session': {
+                        'id': session.id,
+                        'session_token': session.session_token,
+                        'session_type': session.session_type,
+                        'expires_at': session.expires_at,
+                        'is_valid': session.is_valid,
+                        'access_level': access_level
+                    },
+                    'patient': patient_info,
+                    'documents': serializer.data,
+                    'document_count': len(documents)
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except NFCSession.DoesNotExist:
+            return Response({
+                'status': False,
+                'code': status.HTTP_404_NOT_FOUND,
+                'message': 'NFC session not found.'
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+    except Exception as exc:
+        import logging
+        logger = logging.getLogger('django.request')
+        logger.error(f"Error in nfc_session_documents: {str(exc)}")
+        
+        # Use custom exception handler
+        context = {'request': request, 'view': None}
+        response = custom_exception_handler(exc, context)
+        return response
