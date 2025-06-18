@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 import uuid
 from datetime import timedelta
 from MedAudit.exception_handler import custom_exception_handler
+from account.serializers import UserDetailSerializer
 
 User = get_user_model()
 
@@ -487,21 +488,9 @@ def nfc_session_documents(request, session_token):
             # Serialize and return documents
             serializer = DocumentSerializer(documents, many=True)
             
-            # Get patient information
-            patient_info = {
-                'patient_id': session.patient.id,
-                'email': session.patient.email
-            }
-            
-            # Add profile data if available
-            if hasattr(session.patient, 'profile'):
-                profile = session.patient.profile
-                patient_info.update({
-                    'name': getattr(profile, 'name', None),
-                    'date_of_birth': getattr(profile, 'date_of_birth', None),
-                    'phone_number': getattr(profile, 'phone_number', None),
-                    'location': getattr(profile, 'location', None)
-                })
+            # Get patient information using UserDetailSerializer
+            patient_serializer = UserDetailSerializer(session.patient)
+            patient_info = patient_serializer.data
             
             # Return a comprehensive response with patient info and documents
             return Response({
