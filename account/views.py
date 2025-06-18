@@ -5,7 +5,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model, login, logout
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import RegisterSerializer, LoginSerializer, ForgotPasswordSerializer, ProfileUpdateSerializer, UserProfileSerializer, UserDetailSerializer
+from .serializers import RegisterSerializer, LoginSerializer, ForgotPasswordSerializer, UserProfileSerializer, UserDetailSerializer
 from MedAudit.exception_handler import custom_exception_handler
 
 User = get_user_model()
@@ -147,7 +147,7 @@ class ProfileUpdateView(APIView):
     def put(self, request):
         try:
             profile = request.user.profile
-            serializer = ProfileUpdateSerializer(profile, data=request.data, partial=True)
+            serializer = UserProfileSerializer(profile, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
                 # Advance user_stage to 2 if profile is now complete
