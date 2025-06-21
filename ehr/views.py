@@ -83,12 +83,25 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         try:
             user = self.request.user
+            
+            # Check if we need to associate this document with a visit
+            visit = None
+            visit_id = self.request.data.get('visit')
+            if visit_id:
+                try:
+                    from .models import PatientVisit
+                    visit = PatientVisit.objects.get(id=visit_id)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger('django.request')
+                    logger.error(f"Error finding visit {visit_id}: {str(e)}")
+            
             if hasattr(user, 'profile') and user.user_type.name == 'Doctor':
-                serializer.save(uploaded_by=user, patient=user, is_approved=False)
+                serializer.save(uploaded_by=user, patient=user, is_approved=False, visit=visit)
             elif hasattr(user, 'profile') and user.user_type.name == 'Patient':
-                serializer.save(uploaded_by=user, patient=user, is_approved=True)
+                serializer.save(uploaded_by=user, patient=user, is_approved=True, visit=visit)
             elif user.is_staff:
-                serializer.save(uploaded_by=user, is_approved=True)
+                serializer.save(uploaded_by=user, is_approved=True, visit=visit)
         except Exception as exc:
             import logging
             logger = logging.getLogger('django.request')

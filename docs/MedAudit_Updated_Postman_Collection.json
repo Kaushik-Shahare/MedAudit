@@ -1,0 +1,726 @@
+{
+  "info": {
+    "_postman_id": "df3a5c2d-745b-46cd-88e8-9f2a9ca7a200",
+    "name": "MedAudit_Updated",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"admin@example.com\",\n    \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/auth/login/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login",
+                ""
+              ]
+            },
+            "description": "Login to get authentication token"
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication endpoints"
+    },
+    {
+      "name": "NFC Sessions",
+      "item": [
+        {
+          "name": "Generate NFC Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{AUTH_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"patient_id\": 2,\n    \"card_id\": \"ab12cd34-5678-90ef-ghij-klmnopqrstuv\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/nfc/tap/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "nfc",
+                "tap",
+                ""
+              ]
+            },
+            "description": "Generate a new NFC session when a patient taps their card"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Active Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{AUTH_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/nfc/sessions/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "nfc",
+                "sessions",
+                ""
+              ]
+            },
+            "description": "List all active NFC sessions"
+          },
+          "response": []
+        }
+      ],
+      "description": "NFC Card and session management endpoints"
+    },
+    {
+      "name": "Patient Visits",
+      "item": [
+        {
+          "name": "Create Visit (Admin Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ADMIN_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"patient\": 2,\n    \"visit_type\": \"routine_checkup\",\n    \"reason_for_visit\": \"Annual checkup\",\n    \"attending_doctor\": 3,\n    \"session_id\": {{SESSION_ID}}\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/visits/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "visits",
+                ""
+              ]
+            },
+            "description": "Create a new patient visit (Admin only). Requires a valid session_id in the request body."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Visit with Query Param",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ADMIN_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"patient\": 2,\n    \"visit_type\": \"routine_checkup\",\n    \"reason_for_visit\": \"Annual checkup\",\n    \"attending_doctor\": 3\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/visits/?session_id={{SESSION_ID}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "visits",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "session_id",
+                  "value": "{{SESSION_ID}}"
+                }
+              ]
+            },
+            "description": "Create a new patient visit (Admin only) using query parameter for session_id"
+          },
+          "response": []
+        },
+        {
+          "name": "List All Visits (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ADMIN_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/visits/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "visits",
+                ""
+              ]
+            },
+            "description": "List all patient visits (Admin can see all)"
+          },
+          "response": []
+        },
+        {
+          "name": "List My Visits (Doctor)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{DOCTOR_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/visits/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "visits",
+                ""
+              ]
+            },
+            "description": "List visits assigned to the doctor or with active sessions"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Visit Details (Doctor with Session)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{DOCTOR_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/visits/{{VISIT_ID}}/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "visits",
+                "{{VISIT_ID}}",
+                ""
+              ]
+            },
+            "description": "Get detailed information about a visit - doctor needs active session"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Visit (Doctor with Session)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{DOCTOR_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"diagnosis\": \"Patient has mild hypertension\",\n    \"treatment_notes\": \"Prescribed lifestyle changes and blood pressure monitoring\",\n    \"follow_up_required\": true,\n    \"follow_up_date\": \"2023-08-15T10:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/visits/{{VISIT_ID}}/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "visits",
+                "{{VISIT_ID}}",
+                ""
+              ]
+            },
+            "description": "Update a visit - doctor needs active session"
+          },
+          "response": []
+        }
+      ],
+      "description": "Patient visit management endpoints"
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Upload Document (Doctor with Session)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{DOCTOR_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "patient",
+                  "value": "2",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Blood test results",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "/path/to/document.pdf"
+                },
+                {
+                  "key": "document_type",
+                  "value": "Lab Report",
+                  "type": "text"
+                },
+                {
+                  "key": "visit",
+                  "value": "{{VISIT_ID}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/ehr/documents/",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "ehr",
+                "documents",
+                ""
+              ]
+            },
+            "description": "Upload a document - doctor needs active session linked to the visit"
+          },
+          "response": []
+        }
+      ],
+      "description": "Document upload and management endpoints"
+    },
+    {
+      "name": "Complete Workflows",
+      "item": [
+        {
+          "name": "Admin Flow",
+          "item": [
+            {
+              "name": "1. Admin Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"email\": \"admin@example.com\",\n    \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/auth/login/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login",
+                    ""
+                  ]
+                },
+                "description": "Login as admin"
+              },
+              "response": []
+            },
+            {
+              "name": "2. Generate NFC Session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"patient_id\": 2,\n    \"card_id\": \"ab12cd34-5678-90ef-ghij-klmnopqrstuv\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/ehr/nfc/tap/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ehr",
+                    "nfc",
+                    "tap",
+                    ""
+                  ]
+                },
+                "description": "Create NFC session for patient"
+              },
+              "response": []
+            },
+            {
+              "name": "3. Create Visit",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"patient\": 2,\n    \"visit_type\": \"routine_checkup\",\n    \"reason_for_visit\": \"Annual checkup\",\n    \"attending_doctor\": 3,\n    \"session_id\": {{SESSION_ID}}\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/ehr/visits/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ehr",
+                    "visits",
+                    ""
+                  ]
+                },
+                "description": "Admin creates patient visit"
+              },
+              "response": []
+            }
+          ],
+          "description": "Complete workflow for admin users"
+        },
+        {
+          "name": "Doctor Flow",
+          "item": [
+            {
+              "name": "1. Doctor Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"email\": \"doctor@example.com\",\n    \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/auth/login/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login",
+                    ""
+                  ]
+                },
+                "description": "Login as doctor"
+              },
+              "response": []
+            },
+            {
+              "name": "2. Generate NFC Session",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{DOCTOR_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"patient_id\": 2,\n    \"card_id\": \"ab12cd34-5678-90ef-ghij-klmnopqrstuv\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/ehr/nfc/tap/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ehr",
+                    "nfc",
+                    "tap",
+                    ""
+                  ]
+                },
+                "description": "Doctor generates NFC session"
+              },
+              "response": []
+            },
+            {
+              "name": "3. View Visit Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{DOCTOR_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/ehr/visits/{{VISIT_ID}}/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ehr",
+                    "visits",
+                    "{{VISIT_ID}}",
+                    ""
+                  ]
+                },
+                "description": "Doctor views visit details (needs active session)"
+              },
+              "response": []
+            },
+            {
+              "name": "4. Update Visit",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{DOCTOR_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"diagnosis\": \"Patient has mild hypertension\",\n    \"treatment_notes\": \"Prescribed lifestyle changes and blood pressure monitoring\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/ehr/visits/{{VISIT_ID}}/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ehr",
+                    "visits",
+                    "{{VISIT_ID}}",
+                    ""
+                  ]
+                },
+                "description": "Doctor updates visit details (needs active session)"
+              },
+              "response": []
+            },
+            {
+              "name": "5. Upload Document",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{DOCTOR_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "patient",
+                      "value": "2",
+                      "type": "text"
+                    },
+                    {
+                      "key": "description",
+                      "value": "Prescription",
+                      "type": "text"
+                    },
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": "/path/to/prescription.pdf"
+                    },
+                    {
+                      "key": "document_type",
+                      "value": "Prescription",
+                      "type": "text"
+                    },
+                    {
+                      "key": "visit",
+                      "value": "{{VISIT_ID}}",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/ehr/documents/",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ehr",
+                    "documents",
+                    ""
+                  ]
+                },
+                "description": "Doctor uploads document (needs active session linked to visit)"
+              },
+              "response": []
+            }
+          ],
+          "description": "Complete workflow for doctor users"
+        }
+      ],
+      "description": "Complete workflow examples for different user types"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "AUTH_TOKEN",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ADMIN_TOKEN",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "DOCTOR_TOKEN",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "PATIENT_TOKEN",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "SESSION_ID",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "VISIT_ID",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

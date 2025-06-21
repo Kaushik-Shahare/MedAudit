@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     
     "account",
     "ehr",
+    "insurance",
 ]
 
 MIDDLEWARE = [

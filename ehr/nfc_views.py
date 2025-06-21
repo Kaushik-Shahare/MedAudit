@@ -134,6 +134,90 @@ class NFCSessionViewSet(viewsets.ReadOnlyModelViewSet):
             # Use the custom exception handler
             response = custom_exception_handler(exc, self.get_renderer_context())
             return response
+        
+    @action(detail=True, methods=['post'], url_path='create-visit')
+    def create_visit(self, request, pk=None):
+        """Create a new patient visit from an NFC session."""
+        try:
+            session = self.get_object()
+            user = request.user
+            
+            # Only doctors or staff can create visits from sessions
+            if not user.is_staff and not (hasattr(user, 'user_type') and user.user_type.name == 'Doctor'):
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_403_FORBIDDEN,
+                    'message': 'Only doctors or staff can create visits from sessions'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # For doctors, ensure they're the one who accessed this session
+            if hasattr(user, 'user_type') and user.user_type.name == 'Doctor' and session.accessed_by != user:
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_403_FORBIDDEN,
+                    'message': 'You can only create visits for sessions you have accessed'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Check if session is still valid
+            if not session.is_valid:
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_400_BAD_REQUEST,
+                    'message': 'Cannot create visit with an expired or inactive session'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # If visit already exists for this session, return it
+            if session.visit:
+                from .serializers import PatientVisitDetailSerializer
+                return Response({
+                    'status': True,
+                    'code': status.HTTP_200_OK,
+                    'message': 'Visit already exists for this session',
+                    'data': PatientVisitDetailSerializer(session.visit).data
+                })
+            
+            # Get required fields from request data
+            visit_type = request.data.get('visit_type')
+            reason_for_visit = request.data.get('reason_for_visit')
+            
+            if not visit_type:
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_400_BAD_REQUEST,
+                    'message': 'visit_type is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create the visit
+            from .models import PatientVisit
+            visit = PatientVisit.objects.create(
+                patient=session.patient,
+                visit_type=visit_type,
+                reason_for_visit=reason_for_visit,
+                attending_doctor=user if hasattr(user, 'user_type') and user.user_type.name == 'Doctor' else None,
+                created_by=user
+            )
+            
+            # Link the session to the visit
+            session.visit = visit
+            session.save()
+            
+            # Return the visit details
+            from .serializers import PatientVisitDetailSerializer
+            return Response({
+                'status': True,
+                'code': status.HTTP_201_CREATED,
+                'message': 'Visit created successfully',
+                'data': PatientVisitDetailSerializer(visit).data
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger('django.request')
+            logger.error(f"Error in create_visit: {str(exc)}")
+            
+            # Use the custom exception handler
+            response = custom_exception_handler(exc, self.get_renderer_context())
+            return response
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -371,6 +455,8 @@ def tap_nfc_card_public(request, card_id):
     
     All accesses are logged for security and auditing purposes.
     Sessions last 4 hours by default.
+    
+    Can associate session with an active patient visit if visit_id is provided.
     """
     try:
         # Log the request details for debugging
@@ -425,11 +511,26 @@ def tap_nfc_card_public(request, card_id):
             # Anonymous user access (no login)
             logger.info(f"Anonymous emergency access to card: {card_id}")
         
+        # Check if this session should be linked to a visit
+        visit = None
+        visit_id = request.data.get('visit_id') if request.method == 'POST' else request.GET.get('visit_id')
+        
+        if visit_id:
+            try:
+                from .models import PatientVisit
+                visit = PatientVisit.objects.get(id=visit_id, patient=nfc_card.patient)
+                logger.info(f"NFC session associated with visit #{visit.visit_number}")
+            except Exception as e:
+                logger.error(f"Error associating NFC session with visit: {str(e)}")
+                # Continue without linking to visit
+                pass
+        
         # Create the session with the determined access level
         session = NFCSession.objects.create(
             patient=nfc_card.patient,
             accessed_by=accessed_by,
-            session_type=session_type
+            session_type=session_type,
+            visit=visit
         )
         
         # Return session data along with what kind of access was granted
@@ -445,7 +546,8 @@ def tap_nfc_card_public(request, card_id):
                 'access_type': session_type,
                 'documents_url': f'/api/ehr/nfc/session/{session.session_token}/documents/',
                 'expires_at': session.expires_at,
-                'access_level': 'Full access' if session_type in ['doctor', 'patient'] else 'Emergency access only'
+                'access_level': 'Full access' if session_type in ['doctor', 'patient'] else 'Emergency access only',
+                'visit': visit.visit_number if visit else None
             }
         }
         

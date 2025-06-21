@@ -5,6 +5,7 @@ from .views import (DocumentViewSet, AccessRequestViewSet, PatientDocumentListCr
                    nfc_session_documents)
 from .nfc_views import (NFCCardViewSet, NFCSessionViewSet, verify_nfc_session, emergency_access,
                       generate_nfc_qr_code, generate_emergency_qr_code, tap_nfc_card_public)
+from .visit_views import PatientVisitViewSet, VisitChargeViewSet, SessionActivityViewSet
 
 # Set up the regular API routers
 router = DefaultRouter()
@@ -12,6 +13,9 @@ router.register(r'documents', DocumentViewSet, basename='document')
 router.register(r'access-requests', AccessRequestViewSet, basename='accessrequest')
 router.register(r'nfc-cards', NFCCardViewSet, basename='nfccard')
 router.register(r'nfc-sessions', NFCSessionViewSet, basename='nfcsession')
+router.register(r'patient-visits', PatientVisitViewSet, basename='patientvisit')
+router.register(r'visit-charges', VisitChargeViewSet, basename='visitcharge')
+router.register(r'session-activities', SessionActivityViewSet, basename='sessionactivity')
 
 urlpatterns = [
     path('', include(router.urls)),
