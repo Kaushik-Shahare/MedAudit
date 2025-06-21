@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Document, AccessRequest, NFCCard, NFCSession, EmergencyAccess, PatientVisit, VisitCharge, SessionActivity
+from .models import Document, AccessRequest, NFCCard, NFCSession, EmergencyAccess, PatientVisit, VisitCharge, SessionActivity, Diagnosis, VitalSigns, LabResult, Prescription
 from django.contrib.auth import get_user_model
 import os
 from account.serializers import UserDetailSerializer
@@ -377,3 +377,384 @@ class SessionActivitySerializer(serializers.ModelSerializer):
         if obj.document:
             return obj.document.description
         return None
+
+class VitalSignsSerializer(serializers.ModelSerializer):
+    recorded_by_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = VitalSigns
+        fields = '__all__'
+        read_only_fields = ['recorded_by_name', 'bmi']
+    
+    def get_recorded_by_name(self, obj):
+        if obj.recorded_by and hasattr(obj.recorded_by, 'profile'):
+            return obj.recorded_by.profile.name
+        elif obj.recorded_by:
+            return obj.recorded_by.email
+        return None
+
+    def validate(self, attrs):
+        # Ensure we have a session token for authentication
+        request = self.context.get('request')
+        session_token = request.data.get('session_token') or request.query_params.get('session_token')
+        
+        if not session_token:
+            raise serializers.ValidationError({
+                "session_token": "A valid session_token is required for this operation"
+            })
+            
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session is valid (not expired)
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+                
+            # Validate the session belongs to the requesting doctor
+            if session.accessed_by != request.user:
+                raise serializers.ValidationError({
+                    "session_token": "The session token does not belong to you. Only the doctor who created the session can use it.",
+                    "error_code": "unauthorized_session"
+                })
+                
+            # Validate the session is a doctor session
+            if session.session_type != 'doctor':
+                raise serializers.ValidationError({
+                    "session_token": "This operation requires a doctor session token.",
+                    "error_code": "invalid_session_type"
+                })
+            
+            # Store for later use in create method
+            self.context['session_token'] = session_token
+            self.context['session'] = session
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({
+                "session_token": "Invalid session token provided",
+                "error_code": "invalid_token"
+            })
+        
+        return attrs
+        
+    def create(self, validated_data):
+        # Get the session token from the context
+        session_token = self.context.get('session_token')
+        request = self.context.get('request')
+        
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+            
+            # Set the recorded_by from the request user
+            validated_data['recorded_by'] = request.user
+            
+            # Create the vital signs record
+            vital_signs = VitalSigns.objects.create(**validated_data)
+            
+            return vital_signs
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({"session_token": "Invalid session token"})
+
+
+class DiagnosisSerializer(serializers.ModelSerializer):
+    diagnosed_by_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Diagnosis
+        fields = '__all__'
+        read_only_fields = ['diagnosed_by_name', 'diagnosis_date']
+    
+    def get_diagnosed_by_name(self, obj):
+        if obj.diagnosed_by and hasattr(obj.diagnosed_by, 'profile'):
+            return obj.diagnosed_by.profile.name
+        elif obj.diagnosed_by:
+            return obj.diagnosed_by.email
+        return None
+
+    def validate(self, attrs):
+        # Ensure we have a session token for authentication
+        request = self.context.get('request')
+        session_token = request.data.get('session_token') or request.query_params.get('session_token')
+        
+        if not session_token:
+            raise serializers.ValidationError({
+                "session_token": "A valid session_token is required for this operation"
+            })
+            
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session is valid (not expired)
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+                
+            # Validate the session belongs to the requesting doctor
+            if session.accessed_by != request.user:
+                raise serializers.ValidationError({
+                    "session_token": "The session token does not belong to you. Only the doctor who created the session can use it.",
+                    "error_code": "unauthorized_session"
+                })
+                
+            # Validate the session is a doctor session
+            if session.session_type != 'doctor':
+                raise serializers.ValidationError({
+                    "session_token": "This operation requires a doctor session token.",
+                    "error_code": "invalid_session_type"
+                })
+            
+            # Store for later use in create method
+            self.context['session_token'] = session_token
+            self.context['session'] = session
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({
+                "session_token": "Invalid session token provided",
+                "error_code": "invalid_token"
+            })
+        
+        # Additional validation for condition_name
+        condition_name = attrs.get('condition_name')
+        if not condition_name or len(condition_name) < 3:
+            raise serializers.ValidationError({
+                "condition_name": "A valid condition name with at least 3 characters is required"
+            })
+        
+        return attrs
+        
+    def create(self, validated_data):
+        # Get the session token from the context
+        session_token = self.context.get('session_token')
+        request = self.context.get('request')
+        
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+            
+            # Set the diagnosed_by from the request user
+            validated_data['diagnosed_by'] = request.user
+            
+            # Create the diagnosis record
+            diagnosis = Diagnosis.objects.create(**validated_data)
+            
+            return diagnosis
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({"session_token": "Invalid session token"})
+
+
+class LabResultSerializer(serializers.ModelSerializer):
+    ordered_by_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = LabResult
+        fields = '__all__'
+        read_only_fields = ['ordered_by_name']
+    
+    def get_ordered_by_name(self, obj):
+        if obj.ordered_by and hasattr(obj.ordered_by, 'profile'):
+            return obj.ordered_by.profile.name
+        elif obj.ordered_by:
+            return obj.ordered_by.email
+        return None
+
+    def validate(self, attrs):
+        # Ensure we have a session token for authentication
+        request = self.context.get('request')
+        session_token = request.data.get('session_token') or request.query_params.get('session_token')
+        
+        if not session_token:
+            raise serializers.ValidationError({
+                "session_token": "A valid session_token is required for this operation"
+            })
+            
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session is valid (not expired)
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+                
+            # Validate the session belongs to the requesting doctor
+            if session.accessed_by != request.user:
+                raise serializers.ValidationError({
+                    "session_token": "The session token does not belong to you. Only the doctor who created the session can use it.",
+                    "error_code": "unauthorized_session"
+                })
+                
+            # Validate the session is a doctor session
+            if session.session_type != 'doctor':
+                raise serializers.ValidationError({
+                    "session_token": "This operation requires a doctor session token.",
+                    "error_code": "invalid_session_type"
+                })
+            
+            # Store for later use in create method
+            self.context['session_token'] = session_token
+            self.context['session'] = session
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({
+                "session_token": "Invalid session token provided",
+                "error_code": "invalid_token"
+            })
+        
+        return attrs
+        
+    def create(self, validated_data):
+        # Get the session token from the context
+        session_token = self.context.get('session_token')
+        request = self.context.get('request')
+        
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+            
+            # Set the ordered_by from the request user
+            validated_data['ordered_by'] = request.user
+            
+            # Create the lab result record
+            lab_result = LabResult.objects.create(**validated_data)
+            
+            return lab_result
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({"session_token": "Invalid session token"})
+
+
+class PrescriptionSerializer(serializers.ModelSerializer):
+    prescribed_by_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Prescription
+        fields = '__all__'
+        read_only_fields = ['prescribed_by_name']
+    
+    def get_prescribed_by_name(self, obj):
+        if obj.prescribed_by and hasattr(obj.prescribed_by, 'profile'):
+            return obj.prescribed_by.profile.name
+        elif obj.prescribed_by:
+            return obj.prescribed_by.email
+        return None
+
+    def validate(self, attrs):
+        # Ensure we have a session token for authentication
+        request = self.context.get('request')
+        session_token = request.data.get('session_token') or request.query_params.get('session_token')
+        
+        if not session_token:
+            raise serializers.ValidationError({
+                "session_token": "A valid session_token is required for this operation"
+            })
+            
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session is valid (not expired)
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+                
+            # Validate the session belongs to the requesting doctor
+            if session.accessed_by != request.user:
+                raise serializers.ValidationError({
+                    "session_token": "The session token does not belong to you. Only the doctor who created the session can use it.",
+                    "error_code": "unauthorized_session"
+                })
+                
+            # Validate the session is a doctor session
+            if session.session_type != 'doctor':
+                raise serializers.ValidationError({
+                    "session_token": "This operation requires a doctor session token.",
+                    "error_code": "invalid_session_type"
+                })
+            
+            # Store for later use in create method
+            self.context['session_token'] = session_token
+            self.context['session'] = session
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({
+                "session_token": "Invalid session token provided",
+                "error_code": "invalid_token"
+            })
+        
+        # Validate medication details
+        if not attrs.get('medication_name'):
+            raise serializers.ValidationError({"medication_name": "Medication name is required"})
+            
+        if not attrs.get('start_date'):
+            raise serializers.ValidationError({"start_date": "Start date is required"})
+        
+        return attrs
+        
+    def create(self, validated_data):
+        # Get the session token from the context
+        session_token = self.context.get('session_token')
+        request = self.context.get('request')
+        
+        try:
+            # Get session by token
+            session = NFCSession.objects.get(session_token=session_token)
+            
+            # Validate the session
+            is_valid, error_code, error_message = session.validate_session()
+            if not is_valid:
+                raise serializers.ValidationError({
+                    "session_token": error_message,
+                    "error_code": error_code
+                })
+            
+            # Set the prescribed_by from the request user
+            validated_data['prescribed_by'] = request.user
+            
+            # Create the prescription record
+            prescription = Prescription.objects.create(**validated_data)
+            
+            return prescription
+            
+        except NFCSession.DoesNotExist:
+            raise serializers.ValidationError({"session_token": "Invalid session token"})

@@ -5,7 +5,8 @@ from .views import (DocumentViewSet, AccessRequestViewSet, PatientDocumentListCr
                    nfc_session_documents)
 from .nfc_views import (NFCCardViewSet, NFCSessionViewSet, verify_nfc_session, emergency_access,
                       generate_nfc_qr_code, generate_emergency_qr_code, tap_nfc_card_public)
-from .visit_views import PatientVisitViewSet, VisitChargeViewSet, SessionActivityViewSet
+from .visit_views import (PatientVisitViewSet, VisitChargeViewSet, SessionActivityViewSet,
+                       VitalSignsViewSet, DiagnosisViewSet, LabResultViewSet, PrescriptionViewSet)
 
 # Set up the regular API routers
 router = DefaultRouter()
@@ -16,6 +17,12 @@ router.register(r'nfc-sessions', NFCSessionViewSet, basename='nfcsession')
 router.register(r'patient-visits', PatientVisitViewSet, basename='patientvisit')
 router.register(r'visit-charges', VisitChargeViewSet, basename='visitcharge')
 router.register(r'session-activities', SessionActivityViewSet, basename='sessionactivity')
+
+# Medical document APIs - restricted to medical staff (doctors and admins)
+router.register(r'vital-signs', VitalSignsViewSet, basename='vitalsigns')
+router.register(r'diagnoses', DiagnosisViewSet, basename='diagnosis')
+router.register(r'lab-results', LabResultViewSet, basename='labresult')
+router.register(r'prescriptions', PrescriptionViewSet, basename='prescription')
 
 urlpatterns = [
     path('', include(router.urls)),

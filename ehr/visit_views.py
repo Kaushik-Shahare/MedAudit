@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from .models import PatientVisit, VisitCharge, Document, NFCSession, SessionActivity
+from .models import PatientVisit, VisitCharge, Document, NFCSession, SessionActivity, VitalSigns, Diagnosis, LabResult, Prescription
 from .serializers import (
     PatientVisitListSerializer,
     PatientVisitDetailSerializer,
@@ -12,7 +12,11 @@ from .serializers import (
     VisitChargeSerializer,
     VisitChargeCreateSerializer,
     DocumentSerializer,
-    SessionActivitySerializer
+    SessionActivitySerializer,
+    VitalSignsSerializer,
+    DiagnosisSerializer,
+    LabResultSerializer,
+    PrescriptionSerializer
 )
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -748,3 +752,233 @@ class SessionActivityViewSet(viewsets.ReadOnlyModelViewSet):
                 'code': status.HTTP_404_NOT_FOUND,
                 'message': 'Visit not found'
             }, status=status.HTTP_404_NOT_FOUND)
+
+class MedicalStaffPermission(permissions.BasePermission):
+    """
+    Custom permission to only allow doctors and admins to perform actions.
+    """
+    def has_permission(self, request, view):
+        # Check if user is authenticated
+        if not request.user.is_authenticated:
+            return False
+            
+        # Check if user is admin
+        if request.user.is_staff:
+            return True
+            
+        # Check if user is a doctor
+        if hasattr(request.user, 'user_type') and request.user.user_type.name == 'Doctor':
+            return True
+            
+        return False
+        
+    def has_object_permission(self, request, view, obj):
+        # Always allow admins
+        if request.user.is_staff:
+            return True
+            
+        # Check if user is a doctor with proper access
+        if hasattr(request.user, 'user_type') and request.user.user_type.name == 'Doctor':
+            # For medical document models with a visit field
+            if hasattr(obj, 'visit'):
+                # Check if doctor is the attending doctor or has an active session
+                if obj.visit.attending_doctor == request.user or obj.visit.has_active_session_for_user(request.user):
+                    return True
+                    
+        return False
+
+
+class VitalSignsViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing patient vital signs.
+    Only accessible by medical staff (doctors and admins).
+    """
+    serializer_class = VitalSignsSerializer
+    permission_classes = [IsAuthenticated, MedicalStaffPermission]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Admin can see all vital signs
+        if user.is_staff:
+            return VitalSigns.objects.all()
+            
+        # Doctors can only see vital signs for their patients or with active sessions
+        if hasattr(user, 'user_type') and user.user_type.name == 'Doctor':
+            return VitalSigns.objects.filter(
+                Q(visit__attending_doctor=user) |
+                Q(visit__sessions__accessed_by=user, visit__sessions__is_active=True, visit__sessions__expires_at__gt=timezone.now())
+            ).distinct()
+            
+        # Default empty queryset
+        return VitalSigns.objects.none()
+    
+    @action(detail=False, methods=['get'])
+    def by_visit(self, request):
+        """Get all vital signs for a specific visit."""
+        visit_id = request.query_params.get('visit_id')
+        
+        if not visit_id:
+            return Response({"error": "visit_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            visit = PatientVisit.objects.get(id=visit_id)
+            
+            # Check if user has permission to access this visit
+            can_access, error_msg = visit.can_be_edited_by(request.user)
+            if not can_access:
+                return Response({"error": error_msg}, status=status.HTTP_403_FORBIDDEN)
+                
+            vitals = VitalSigns.objects.filter(visit=visit).order_by('-recorded_at')
+            serializer = self.get_serializer(vitals, many=True)
+            return Response(serializer.data)
+            
+        except PatientVisit.DoesNotExist:
+            return Response({"error": "Visit not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class DiagnosisViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing patient diagnoses.
+    Only accessible by medical staff (doctors and admins).
+    """
+    serializer_class = DiagnosisSerializer
+    permission_classes = [IsAuthenticated, MedicalStaffPermission]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Admin can see all diagnoses
+        if user.is_staff:
+            return Diagnosis.objects.all()
+            
+        # Doctors can only see diagnoses for their patients or with active sessions
+        if hasattr(user, 'user_type') and user.user_type.name == 'Doctor':
+            return Diagnosis.objects.filter(
+                Q(visit__attending_doctor=user) |
+                Q(visit__sessions__accessed_by=user, visit__sessions__is_active=True, visit__sessions__expires_at__gt=timezone.now())
+            ).distinct()
+            
+        # Default empty queryset
+        return Diagnosis.objects.none()
+    
+    @action(detail=False, methods=['get'])
+    def by_visit(self, request):
+        """Get all diagnoses for a specific visit."""
+        visit_id = request.query_params.get('visit_id')
+        
+        if not visit_id:
+            return Response({"error": "visit_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            visit = PatientVisit.objects.get(id=visit_id)
+            
+            # Check if user has permission to access this visit
+            can_access, error_msg = visit.can_be_edited_by(request.user)
+            if not can_access:
+                return Response({"error": error_msg}, status=status.HTTP_403_FORBIDDEN)
+                
+            diagnoses = Diagnosis.objects.filter(visit=visit).order_by('-created_at')
+            serializer = self.get_serializer(diagnoses, many=True)
+            return Response(serializer.data)
+            
+        except PatientVisit.DoesNotExist:
+            return Response({"error": "Visit not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class LabResultViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing patient lab results.
+    Only accessible by medical staff (doctors and admins).
+    """
+    serializer_class = LabResultSerializer
+    permission_classes = [IsAuthenticated, MedicalStaffPermission]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Admin can see all lab results
+        if user.is_staff:
+            return LabResult.objects.all()
+            
+        # Doctors can only see lab results for their patients or with active sessions
+        if hasattr(user, 'user_type') and user.user_type.name == 'Doctor':
+            return LabResult.objects.filter(
+                Q(visit__attending_doctor=user) |
+                Q(visit__sessions__accessed_by=user, visit__sessions__is_active=True, visit__sessions__expires_at__gt=timezone.now())
+            ).distinct()
+            
+        # Default empty queryset
+        return LabResult.objects.none()
+    
+    @action(detail=False, methods=['get'])
+    def by_visit(self, request):
+        """Get all lab results for a specific visit."""
+        visit_id = request.query_params.get('visit_id')
+        
+        if not visit_id:
+            return Response({"error": "visit_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            visit = PatientVisit.objects.get(id=visit_id)
+            
+            # Check if user has permission to access this visit
+            can_access, error_msg = visit.can_be_edited_by(request.user)
+            if not can_access:
+                return Response({"error": error_msg}, status=status.HTTP_403_FORBIDDEN)
+                
+            lab_results = LabResult.objects.filter(visit=visit).order_by('-test_date')
+            serializer = self.get_serializer(lab_results, many=True)
+            return Response(serializer.data)
+            
+        except PatientVisit.DoesNotExist:
+            return Response({"error": "Visit not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class PrescriptionViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing patient prescriptions.
+    Only accessible by medical staff (doctors and admins).
+    """
+    serializer_class = PrescriptionSerializer
+    permission_classes = [IsAuthenticated, MedicalStaffPermission]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Admin can see all prescriptions
+        if user.is_staff:
+            return Prescription.objects.all()
+            
+        # Doctors can only see prescriptions for their patients or with active sessions
+        if hasattr(user, 'user_type') and user.user_type.name == 'Doctor':
+            return Prescription.objects.filter(
+                Q(visit__attending_doctor=user) |
+                Q(visit__sessions__accessed_by=user, visit__sessions__is_active=True, visit__sessions__expires_at__gt=timezone.now())
+            ).distinct()
+            
+        # Default empty queryset
+        return Prescription.objects.none()
+    
+    @action(detail=False, methods=['get'])
+    def by_visit(self, request):
+        """Get all prescriptions for a specific visit."""
+        visit_id = request.query_params.get('visit_id')
+        
+        if not visit_id:
+            return Response({"error": "visit_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            visit = PatientVisit.objects.get(id=visit_id)
+            
+            # Check if user has permission to access this visit
+            can_access, error_msg = visit.can_be_edited_by(request.user)
+            if not can_access:
+                return Response({"error": error_msg}, status=status.HTTP_403_FORBIDDEN)
+                
+            prescriptions = Prescription.objects.filter(visit=visit).order_by('-created_at')
+            serializer = self.get_serializer(prescriptions, many=True)
+            return Response(serializer.data)
+            
+        except PatientVisit.DoesNotExist:
+            return Response({"error": "Visit not found"}, status=status.HTTP_404_NOT_FOUND)
