@@ -174,3 +174,26 @@ class ProfileUpdateView(APIView):
             # Use the custom exception handler
             response = custom_exception_handler(exc, self.get_renderer_context())
             return response
+
+
+class DoctorListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            doctors = User.objects.filter(user_type__name='Doctor').exclude(is_active=False)
+            serializer = UserDetailSerializer(doctors, many=True)
+            return Response({
+                'status': True,
+                'code': status.HTTP_200_OK,
+                'message': 'Doctor list retrieved successfully',
+                'data': serializer.data
+            })
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger('django.request')
+            logger.error(f"Error in DoctorListView: {str(exc)}")
+            
+            # Use the custom exception handler
+            response = custom_exception_handler(exc, self.get_renderer_context())
+            return response
