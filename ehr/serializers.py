@@ -189,28 +189,6 @@ class PatientVisitListSerializer(serializers.ModelSerializer):
             return f"{hours}h {minutes}m"
         return None
 
-class PatientVisitDetailSerializer(serializers.ModelSerializer):
-    """Detailed serializer for a patient visit including related documents and charges"""
-    patient = UserDetailSerializer(read_only=True)
-    attending_doctor = UserDetailSerializer(read_only=True)
-    created_by = UserDetailSerializer(read_only=True)
-    charges = VisitChargeSerializer(many=True, read_only=True)
-    documents = DocumentSerializer(many=True, read_only=True)
-    sessions = NFCSessionSerializer(many=True, read_only=True)
-    duration = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = PatientVisit
-        fields = '__all__'
-        
-    def get_duration(self, obj):
-        if obj.check_out_time and obj.check_in_time:
-            duration = obj.check_out_time - obj.check_in_time
-            hours, remainder = divmod(duration.seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            return f"{hours}h {minutes}m"
-        return None
-
 class PatientVisitCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating new patient visits"""
     session_token = serializers.CharField(required=True, write_only=True)  # Only accept session_token
@@ -758,3 +736,63 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             
         except NFCSession.DoesNotExist:
             raise serializers.ValidationError({"session_token": "Invalid session token"})
+
+class PatientVisitDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for a patient visit including related documents and charges"""
+    patient = UserDetailSerializer(read_only=True)
+    attending_doctor = UserDetailSerializer(read_only=True)
+    created_by = UserDetailSerializer(read_only=True)
+    charges = VisitChargeSerializer(many=True, read_only=True)
+    documents = DocumentSerializer(many=True, read_only=True)
+    sessions = NFCSessionSerializer(many=True, read_only=True)
+    diagnoses = DiagnosisSerializer(many=True, read_only=True)
+    lab_results = LabResultSerializer(many=True, read_only=True)
+    prescriptions = PrescriptionSerializer(many=True, read_only=True)
+    vitals = VitalSignsSerializer(many=True, read_only=True)
+    duration = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PatientVisit
+        fields = '__all__'
+        
+    def get_duration(self, obj):
+        if obj.check_out_time and obj.check_in_time:
+            duration = obj.check_out_time - obj.check_in_time
+            hours, remainder = divmod(duration.seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{hours}h {minutes}m"
+        return None
+    
+    def to_representation(self, instance):
+        """Override to add related records"""
+        representation = super().to_representation(instance)
+        
+        # Add diagnoses
+        representation['diagnoses'] = DiagnosisSerializer(
+            Diagnosis.objects.filter(visit=instance), 
+            many=True,
+            context=self.context
+        ).data
+        
+        # Add lab results
+        representation['lab_results'] = LabResultSerializer(
+            LabResult.objects.filter(visit=instance),
+            many=True,
+            context=self.context
+        ).data
+        
+        # Add prescriptions
+        representation['prescriptions'] = PrescriptionSerializer(
+            Prescription.objects.filter(visit=instance),
+            many=True,
+            context=self.context
+        ).data
+        
+        # Add vital signs
+        representation['vitals'] = VitalSignsSerializer(
+            VitalSigns.objects.filter(visit=instance),
+            many=True,
+            context=self.context
+        ).data
+        
+        return representation
