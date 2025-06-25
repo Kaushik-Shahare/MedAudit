@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
+import logging
 from .models import PatientVisit, VisitCharge, Document, NFCSession, SessionActivity, VitalSigns, Diagnosis, LabResult, Prescription
 from .serializers import (
     PatientVisitListSerializer,
@@ -68,7 +69,134 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
             
             # Return empty queryset on error
             return PatientVisit.objects.none()
+
+    @action(detail=False, methods=['get'])
+    def patient_visits(self, request):
+        """
+        Get all visits for a specific patient.
+        Requires:
+        - patient_id in query parameters
+        - session_token in query parameters (for doctors)
+        """
+        patient_id = request.query_params.get('patient_id')
+        session_token = request.query_params.get('session_token')
     
+        if not patient_id:
+            return Response({
+                'status': False,
+                'code': status.HTTP_400_BAD_REQUEST,
+                'message': 'patient_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not session_token:
+            return Response({
+                'status': False,
+                'code': status.HTTP_400_BAD_REQUEST,
+                'message': 'session_token is required for this request'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        
+    
+        user = request.user
+    
+        try:
+            # Try to get the patient
+            patient = User.objects.get(id=patient_id)
+        
+            # Check permissions based on user role
+            if user.is_staff or (user.user_type and user.user_type.name.lower() == 'admin'):
+                # Admins can access all patient visits without session token
+                visits = PatientVisit.objects.filter(patient_id=patient_id)
+            elif user.user_type and user.user_type.name.lower() == 'doctor':
+                # Doctors need valid session token unless they're the attending doctor
+                doctor_visits = PatientVisit.objects.filter(patient_id=patient_id, attending_doctor=user)
+            
+                if session_token:
+                    try:
+                        # Validate session
+                        session = NFCSession.objects.get(session_token=session_token)
+                        
+                        print(session.patient_id, patient_id)
+                        # STRICT VALIDATION: Verify the session belongs to the requested patient
+                        if str(session.patient_id) != str(patient_id):
+                            return Response({
+                                'status': False,
+                                'code': status.HTTP_403_FORBIDDEN,
+                                'message': f'Session does not belong to the requested patient. Session patient ID: {session.patient_id}, Requested patient ID: {patient_id}',
+                                'error_code': 'session_patient_mismatch'
+                            }, status=status.HTTP_403_FORBIDDEN)
+                    
+                        is_valid, error_code, error_message = session.validate_session()
+                    
+                        if not is_valid:
+                            return Response({
+                                'status': False,
+                                'code': status.HTTP_400_BAD_REQUEST,
+                                'message': error_message,
+                                'error_code': error_code
+                            }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                        # Get visits accessible through this session
+                        session_visits = PatientVisit.objects.filter(
+                            patient_id=patient_id,
+                            sessions__session_token=session_token
+                        )
+                    
+                        # Combine with visits where doctor is attending
+                        visits = (doctor_visits | session_visits).distinct()
+                    
+                        # Log this access
+                        SessionActivity.log_activity(
+                            session=session,
+                            user=user,
+                            activity_type='view_patient_visits',
+                            details=f"Viewed all visits for patient {patient_id}"
+                        )
+                    
+                    except NFCSession.DoesNotExist:
+                        return Response({
+                            'status': False,
+                            'code': status.HTTP_400_BAD_REQUEST,
+                            'message': 'Invalid session token',
+                            'error_code': 'invalid_token'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    # Without session token, doctors can only see visits where they're the attending doctor
+                    if doctor_visits.exists():
+                        visits = doctor_visits
+                    else:
+                        return Response({
+                            'status': False,
+                            'code': status.HTTP_403_FORBIDDEN,
+                            'message': 'Session token required to view visits for this patient',
+                            'error_code': 'session_required'
+                        }, status=status.HTTP_403_FORBIDDEN)
+            elif int(patient_id) == user.id:
+                # Patients can see their own visits without session token
+                visits = PatientVisit.objects.filter(patient_id=patient_id)
+            else:
+                # All other cases denied
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_403_FORBIDDEN,
+                    'message': 'You do not have permission to view this patient\'s visits'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+            # Serialize and return visits
+            serializer = PatientVisitListSerializer(visits, many=True)
+            return Response({
+                'status': True,
+                'code': status.HTTP_200_OK,
+                'data': serializer.data
+            })
+    
+        except User.DoesNotExist:
+            return Response({
+                'status': False,
+                'code': status.HTTP_404_NOT_FOUND,
+                'message': f'Patient with ID {patient_id} not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
     def perform_create(self, serializer):
         """Set the created_by field when creating a visit."""
         import logging
@@ -427,12 +555,13 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
                     'error_code': error_code
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Check if session belongs to the same patient
-            if session.patient != visit.patient:
+            # Check if session belongs to the same patient (strict equality check)
+            if str(session.patient.id) != str(visit.patient.id):
                 return Response({
                     'status': False,
                     'code': status.HTTP_400_BAD_REQUEST,
-                    'message': 'The session does not belong to this patient'
+                    'message': f'The session does not belong to this patient. Session patient ID: {session.patient.id}, Visit patient ID: {visit.patient.id}',
+                    'error_code': 'session_patient_mismatch'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             # Check if user is authorized to link this session
@@ -474,6 +603,8 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
         This endpoint can be used to check if a session is still valid before using it.
         """
         session_token = request.data.get('session_token')
+        patient_id = request.data.get('patient_id')
+        
         if not session_token:
             return Response({
                 'status': False,
@@ -484,6 +615,15 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
         try:
             # Get session by token
             session = NFCSession.objects.get(session_token=session_token)
+            
+            # If patient_id is provided, validate that the session belongs to this patient
+            if patient_id and str(session.patient_id) != str(patient_id):
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_403_FORBIDDEN,
+                    'message': f'Session does not belong to the requested patient. Session patient ID: {session.patient_id}, Requested patient ID: {patient_id}',
+                    'error_code': 'session_patient_mismatch'
+                }, status=status.HTTP_403_FORBIDDEN)
             
             # Validate session
             is_valid, error_code, error_message = session.validate_session()
