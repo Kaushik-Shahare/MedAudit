@@ -12,6 +12,8 @@ MedAudit is a comprehensive medical records management system designed to secure
 - **Emergency Access**: Temporary access to critical medical documents in emergency situations
 - **QR Code Integration**: NFC emulation through QR codes for devices without NFC capabilities
 - **Cloudinary Integration**: Secure cloud storage for medical documents
+- **AI Insurance Claim Verification**: Automated multi-agent system for insurance claim verification
+- **Reflexive AI Processing**: Self-improving verification through reflexion technique
 
 ## Backend Architecture
 
@@ -146,4 +148,28 @@ python manage.py load_usertypes
 ```bash
 python manage.py runserver
 ```
+
+## AI Components
+
+MedAudit includes an advanced AI system for automating insurance claim verification:
+
+### AI Claim Verification
+
+The system uses a multi-agent approach to verify insurance claims across multiple dimensions:
+
+- **Eligibility Verification**: Validates patient eligibility for insurance coverage
+- **Diagnostic Verification**: Confirms diagnosis codes and medical necessity
+- **Treatment Verification**: Ensures treatments match diagnosis and policy coverage
+- **Billing Verification**: Checks billing amounts and codes for accuracy
+- **Fraud Detection**: Identifies potential fraud indicators
+
+### Reflexion Agent
+
+A sophisticated meta-agent that improves verification results through iterative self-reflection. 
+[Read the detailed Reflexion Agent documentation](docs/ReflexionAgent.md) for more information.
+
+### Documentation
+
+- [AI Claim Verification System](docs/AIClaimVerification.md)
+- [Reflexion Agent](docs/ReflexionAgent.md)
 
