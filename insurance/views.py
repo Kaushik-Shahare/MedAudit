@@ -434,6 +434,52 @@ class InsuranceFormViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    def verify_with_ai(self, request, pk=None):
+        """Verify the insurance form using AI"""
+        user = request.user
+        if not (user.is_superuser or (user.user_type and user.user_type.name.lower() in ['admin', 'doctor'])):
+            return Response(
+                {"error": "Only doctors or admins can trigger AI verification"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        insurance_form = self.get_object()
+        
+        # Check if the form is in a state that can be verified
+        if insurance_form.status not in ['draft', 'submitted']:
+            return Response(
+                {"error": "Only draft or submitted forms can be verified"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Trigger verification
+            from ai_agents.verification import verify_insurance_claim
+            verification_result = verify_insurance_claim(insurance_form.id)
+            
+            if verification_result['success']:
+                return Response({
+                    'status': True,
+                    'message': f"AI verification initiated for insurance form {insurance_form.id}",
+                    'verification_id': verification_result['verification_log_id'],
+                    'is_approved': verification_result['is_approved'],
+                    'confidence_score': verification_result['confidence_score'],
+                    'suggestions': verification_result.get('suggestions', [])
+                })
+            else:
+                return Response({
+                    'status': False,
+                    'message': f"Error during AI verification: {verification_result.get('error', 'Unknown error')}",
+                    'verification_id': verification_result.get('verification_log_id')
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+        except Exception as e:
+            return Response({
+                'status': False,
+                'message': f"Error initiating AI verification: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
     def mark_payment_completed(self, request, pk=None):
         """Mark payment as completed for a claim (admin only)"""
         user = request.user

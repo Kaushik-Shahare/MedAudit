@@ -248,6 +248,33 @@ class InsuranceForm(models.Model):
         """Mark the payment as completed"""
         self.status = 'payment_completed'
         self.save()
+        
+    def verify_with_ai(self):
+        """Trigger AI verification for this insurance form"""
+        from ai_agent.tasks.verification import trigger_insurance_verification
+        
+        try:
+            # Call the verification function
+            trigger_insurance_verification.delay(self.id)
+            
+            from ai_agent.models import AIVerificationResult
+            # Create or get verification result object
+            verification_result, created = AIVerificationResult.objects.get_or_create(
+                insurance_form=self,
+                defaults={'status': 'pending'}
+            )
+            return verification_result
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(f"Error triggering AI verification for claim {self.id}: {str(e)}")
+            return None
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error verifying insurance form {self.id}: {e}")
+            return None
     
     @classmethod
     def create_from_visit(cls, visit, policy, created_by, is_cashless=False):
