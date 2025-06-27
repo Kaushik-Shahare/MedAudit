@@ -69,12 +69,24 @@ def verification_result(request, insurance_form_id):
     
     try:
         verification = AIVerificationResult.objects.get(insurance_form=insurance_form)
+        eligible_verification = verification.eligibility_verification or {}
+        diagnostic_verification = verification.diagnostic_verification or {}
+        treatment_verification = verification.treatment_verification or {}
+        billing_verification = verification.billing_verification or {}
+        fraud_detection = verification.fraud_detection or {}
         
         return Response({
             "status": verification.status,
             "is_approved": verification.is_approved,
             "confidence_score": verification.confidence_score,
             "summary": verification.verification_summary,
+            # "verification_result": verification.verification_result,
+            "eligibility_verification": eligible_verification,
+            "diagnostic_verification": diagnostic_verification,
+            "treatment_verification": treatment_verification,
+            "billing_verification": billing_verification,
+            "fraud_detection": fraud_detection,
+            # "reflections": verification.reflections,
             "created_at": verification.created_at,
             "completed_at": verification.completed_at
         })
