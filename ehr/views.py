@@ -55,7 +55,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
                     'status': False,
                     'code': status.HTTP_403_FORBIDDEN,
                     'message': 'Only the patient or an admin can set emergency access permissions'
-                }, status=status.HTTP_403_FORBIDDEN)
+                }, status=status.HTTP_404_FORBIDDEN)
             
             # Toggle emergency access flag
             document.is_emergency_accessible = not document.is_emergency_accessible
