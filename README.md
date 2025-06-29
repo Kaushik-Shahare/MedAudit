@@ -4,6 +4,10 @@
 
 MedAudit is a comprehensive medical records management system designed to securely store, access, and share electronic health records (EHR) between patients and healthcare providers. The platform emphasizes security, accessibility, and emergency access through innovative technologies like NFC card authentication and QR code generation.
 
+## Multi Agent Flow
+
+![Agent Flow](./ImagesAndVideos/Multi-AgentFlow.jpeg)
+
 ## Key Features
 
 - **Secure EHR Management**: Store and manage patient medical documents with robust access controls
