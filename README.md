@@ -204,7 +204,3 @@ Aman Adhikari
 Aarya Gupta
 Jay Valia
 ```
-
----
-
-For further technical details, refer to the codebase and documentation.
