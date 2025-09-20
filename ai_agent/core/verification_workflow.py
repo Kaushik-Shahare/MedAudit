@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Tuple, TypedDict, Annotated
-from langchain_core.pydantic_v1 import BaseModel, Field
+# from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
 import json
 import logging
@@ -88,6 +89,10 @@ class InsuranceVerificationWorkflow:
         
         # Set entry point
         workflow.set_entry_point("check_eligibility")
+
+        # Print the graph structure for debugging
+        print(workflow.get_graph().draw_mermaid())
+
         
         return workflow
     

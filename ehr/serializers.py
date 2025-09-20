@@ -64,21 +64,16 @@ class AccessRequestSerializer(serializers.ModelSerializer):
         return obj.patient.email
 
 class NFCCardSerializer(serializers.ModelSerializer):
-    patient_name = serializers.SerializerMethodField()
+    patient_profile = UserDetailSerializer(source='patient', read_only=True)
     
     class Meta:
         model = NFCCard
-        fields = ['id', 'card_id', 'patient', 'patient_name', 'is_active', 'created_at', 'last_used']
+        fields = ['id', 'card_id', 'patient', 'patient_profile', 'is_active', 'created_at', 'last_used']
         read_only_fields = ['card_id', 'created_at']
         lookup_field = 'card_id'
         extra_kwargs = {
             'url': {'lookup_field': 'card_id'}
         }
-        
-    def get_patient_name(self, obj):
-        if hasattr(obj.patient, 'profile'):
-            return obj.patient.profile.name
-        return obj.patient.email
 
 class NFCSessionSerializer(serializers.ModelSerializer):
     accessed_by = UserDetailSerializer(read_only=True)

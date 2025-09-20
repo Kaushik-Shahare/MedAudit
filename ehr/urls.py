@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (DocumentViewSet, AccessRequestViewSet, PatientDocumentListCreateAPIView, 
                    PatientDocumentDeleteAPIView, DoctorPatientDocumentListAPIView, PatientEmergencyDocsAPIView,
-                   nfc_session_documents)
+                   nfc_session_documents, PatientDetailView)
 from .nfc_views import (NFCCardViewSet, NFCSessionViewSet, verify_nfc_session, emergency_access,
                       generate_nfc_qr_code, generate_emergency_qr_code, tap_nfc_card_public)
 from .visit_views import (PatientVisitViewSet, VisitChargeViewSet, SessionActivityViewSet,
@@ -31,6 +31,9 @@ urlpatterns = [
     path('patient/documents/<int:pk>/', PatientDocumentDeleteAPIView.as_view(), name='patient-document-delete'),
     path('patient/emergency-docs/', PatientEmergencyDocsAPIView.as_view(), name='patient-emergency-docs'),
     path('doctor/patient/<int:user_id>/documents/', DoctorPatientDocumentListAPIView.as_view(), name='doctor-patient-documents'),
+    
+    # Patient detail API
+    path('patient/<int:patient_id>/', PatientDetailView.as_view(), name='patient-detail'),
     
     # NFC functionality
     path('nfc/verify-session/', verify_nfc_session, name='verify-nfc-session'),

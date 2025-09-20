@@ -541,3 +541,108 @@ def nfc_session_documents(request, session_token):
         context = {'request': request, 'view': None}
         response = custom_exception_handler(exc, context)
         return response
+
+
+class PatientDetailView(APIView):
+    """
+    API view to get patient details by ID.
+    Only accessible by doctors, admins, and the patient themselves.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, patient_id):
+        try:
+            # Get the requested patient
+            try:
+                patient = User.objects.get(id=patient_id, user_type__name='Patient')
+            except User.DoesNotExist:
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_404_NOT_FOUND,
+                    'message': 'Patient not found.'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # Check permissions
+            requesting_user = request.user
+            
+            # Allow patients to view their own details
+            if requesting_user.id == patient.id:
+                pass
+            # Allow doctors and admins to view patient details
+            elif requesting_user.user_type.name in ['Doctor', 'Admin']:
+                pass
+            # For doctors, optionally check if they have access to this patient
+            # elif requesting_user.user_type.name == 'Doctor':
+            #     has_access = AccessRequest.objects.filter(
+            #         doctor=requesting_user, 
+            #         patient=patient, 
+            #         is_approved=True
+            #     ).exists()
+            #     if not has_access:
+            #         return Response({
+            #             'status': False,
+            #             'code': status.HTTP_403_FORBIDDEN,
+            #             'message': 'You do not have access to this patient\'s information.'
+            #         }, status=status.HTTP_403_FORBIDDEN)
+            else:
+                return Response({
+                    'status': False,
+                    'code': status.HTTP_403_FORBIDDEN,
+                    'message': 'You do not have permission to view this patient\'s information.'
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            # Serialize patient data
+            serializer = UserDetailSerializer(patient)
+            patient_data = serializer.data
+
+            # Get recent visits for this patient (last 10)
+            recent_visits_data = []
+            try:
+                from .models import PatientVisit
+                recent_visits = PatientVisit.objects.filter(
+                    patient=patient
+                ).order_by('-check_in_time')[:10]
+
+                # Create simple dictionary for each visit instead of using serializer
+                for visit in recent_visits:
+                    visit_data = {
+                        'id': visit.id,
+                        'visit_number': visit.visit_number,
+                        'check_in_time': visit.check_in_time,
+                        'check_out_time': visit.check_out_time,
+                        'status': visit.status,
+                        'visit_type': visit.visit_type,
+                        'total_amount': str(visit.total_amount) if visit.total_amount else None,
+                        'attending_doctor': visit.attending_doctor.profile.name if hasattr(visit.attending_doctor, 'profile') and visit.attending_doctor.profile else visit.attending_doctor.email if visit.attending_doctor else None
+                    }
+                    recent_visits_data.append(visit_data)
+            except Exception as visit_error:
+                # If visits fail, continue without them
+                print(f"Error fetching visits: {visit_error}")
+                recent_visits_data = []
+
+            # Get document count (if user has access)
+            document_count = 0
+            try:
+                if requesting_user.user_type.name in ['Doctor', 'Admin'] or requesting_user.id == patient.id:
+                    document_count = Document.objects.filter(patient=patient).count()
+            except Exception as doc_error:
+                # If document count fails, default to 0
+                print(f"Error fetching document count: {doc_error}")
+                document_count = 0
+
+            return Response({
+                'patient': patient_data,
+                'recent_visits': recent_visits_data,
+                'document_count': document_count
+            }, status=status.HTTP_200_OK)
+
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger('django.request')
+            logger.error(f"Error in PatientDetailView: {str(exc)}")
+            
+            # Use custom exception handler
+            context = {'request': request, 'view': self}
+            response = custom_exception_handler(exc, context)
+            return response

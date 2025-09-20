@@ -43,24 +43,60 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             user = self.request.user
+            
+            # Get date filter from query parameters
+            filter_date = self.request.query_params.get('date')
+            date_range = self.request.query_params.get('date_range')
+            appointment_status = self.request.query_params.get('status', 'pending')  # Default to pending
+            
+            base_queryset = PatientVisit.objects.none()
+            
             if user.is_staff:
-                return PatientVisit.objects.all().select_related('patient', 'attending_doctor', 'created_by')
+                base_queryset = PatientVisit.objects.all().select_related('patient', 'attending_doctor', 'created_by')
                 
             elif hasattr(user, 'user_type'):
                 if user.user_type.name == 'Patient':
-                    return PatientVisit.objects.filter(patient=user).select_related('patient', 'attending_doctor', 'created_by')
+                    base_queryset = PatientVisit.objects.filter(patient=user).select_related('patient', 'attending_doctor', 'created_by')
                 
                 elif user.user_type.name == 'Doctor':
-                    # Doctors can only see visits where they are the attending doctor
-                    # or visits linked to their active NFC sessions
-                    doctor_visits = PatientVisit.objects.filter(attending_doctor=user)
-                    session_visits = PatientVisit.objects.filter(
-                        sessions__accessed_by=user,
-                        sessions__is_active=True
+                    # For doctors, show appointments where they are the attending doctor
+                    base_queryset = PatientVisit.objects.filter(
+                        attending_doctor=user
+                    ).select_related('patient', 'attending_doctor', 'created_by')
+            
+            # Filter by status (pending appointments for doctors, or all for calendar)
+            if user.user_type.name == 'Doctor':
+                if appointment_status != 'all':  # 'all' means show all statuses for calendar
+                    base_queryset = base_queryset.filter(status=appointment_status)
+            
+            # Apply date filtering if provided
+            if filter_date:
+                try:
+                    from datetime import datetime
+                    filter_date_obj = datetime.strptime(filter_date, '%Y-%m-%d').date()
+                    base_queryset = base_queryset.filter(check_in_time__date=filter_date_obj)
+                except ValueError:
+                    # Invalid date format, ignore filter
+                    pass
+            
+            # Apply date range filtering if provided (for calendar view)
+            elif date_range:
+                try:
+                    from datetime import datetime
+                    start_date_str, end_date_str = date_range.split('_')
+                    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                    base_queryset = base_queryset.filter(
+                        check_in_time__date__gte=start_date,
+                        check_in_time__date__lte=end_date
                     )
-                    return (doctor_visits | session_visits).distinct().select_related('patient', 'attending_doctor', 'created_by')
-                    
-            return PatientVisit.objects.none()
+                except (ValueError, AttributeError):
+                    # Invalid date range format, ignore filter
+                    pass
+            
+            # Order by check_in_time for appointments
+            return base_queryset.order_by('check_in_time')
+            
         except Exception as exc:
             # Log the error
             import logging
@@ -499,7 +535,52 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='upload-document')
     def upload_document(self, request, pk=None):
         """Upload a document and associate it with this visit."""
-        visit = self.get_object()
+        user = request.user
+        
+        # Get the visit with proper permission checking
+        try:
+            visit = PatientVisit.objects.get(pk=pk)
+        except PatientVisit.DoesNotExist:
+            return Response({
+                'status': False,
+                'code': status.HTTP_404_NOT_FOUND,
+                'message': 'No PatientVisit matches the given query.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check permissions
+        session_token = request.data.get('session_token')
+        has_permission = False
+        
+        if user.is_staff:
+            # Staff/Admin users can upload to any visit
+            has_permission = True
+        elif hasattr(user, 'user_type'):
+            if user.user_type.name == 'Patient':
+                # Patients can only upload to their own visits
+                has_permission = (visit.patient == user)
+            elif user.user_type.name == 'Doctor':
+                # Doctors can upload if they're the attending doctor or have valid NFC session
+                if visit.attending_doctor == user:
+                    has_permission = True
+                elif session_token:
+                    # Validate NFC session
+                    try:
+                        session = NFCSession.objects.get(
+                            session_token=session_token,
+                            patient=visit.patient
+                        )
+                        is_valid, error_code, error_message = session.validate_session()
+                        if is_valid:
+                            has_permission = True
+                    except NFCSession.DoesNotExist:
+                        pass
+        
+        if not has_permission:
+            return Response({
+                'status': False,
+                'code': status.HTTP_403_FORBIDDEN,
+                'message': 'You do not have permission to upload documents to this visit.'
+            }, status=status.HTTP_403_FORBIDDEN)
         
         # Validate file in request
         if 'file' not in request.FILES:
@@ -511,13 +592,35 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
             
         file = request.FILES['file']
         
-        # Create the document instance
+        # Extract additional fields from request data
+        description = request.data.get('description', '')
+        document_type = request.data.get('document_type', '')
+        
+        # Create the document instance with additional fields
         document = Document.objects.create(
             patient=visit.patient,
             visit=visit,
             file=file,
-            uploaded_by=request.user
+            uploaded_by=request.user,
+            description=description,
+            document_type=document_type,
+            is_approved=True  # Auto-approve documents uploaded by doctors
         )
+        
+        # Log session activity if session_token provided
+        if session_token:
+            try:
+                session = NFCSession.objects.get(session_token=session_token)
+                SessionActivity.log_activity(
+                    session=session,
+                    user=user,
+                    activity_type='upload_document',
+                    visit=visit,
+                    document=document,
+                    details=f'Uploaded document: {document.description or file.name}'
+                )
+            except NFCSession.DoesNotExist:
+                pass
         
         return Response({
             'status': True,
@@ -525,6 +628,94 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
             'message': 'Document uploaded successfully',
             'data': DocumentSerializer(document).data
         }, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['get'], url_path='documents')
+    def get_documents(self, request, pk=None):
+        """Get all documents associated with this visit."""
+        user = request.user
+        
+        # Get the visit with proper permission checking
+        try:
+            visit = PatientVisit.objects.get(pk=pk)
+        except PatientVisit.DoesNotExist:
+            return Response({
+                'status': False,
+                'code': status.HTTP_404_NOT_FOUND,
+                'message': 'No PatientVisit matches the given query.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check permissions
+        session_token = request.query_params.get('session_token')
+        has_permission = False
+        
+        if user.is_staff:
+            # Staff/Admin users can view documents from any visit
+            has_permission = True
+        elif hasattr(user, 'user_type'):
+            if user.user_type.name == 'Patient':
+                # Patients can only view documents from their own visits
+                has_permission = (visit.patient == user)
+            elif user.user_type.name == 'Doctor':
+                # Doctors can view if they're the attending doctor or have valid NFC session
+                if visit.attending_doctor == user:
+                    has_permission = True
+                elif session_token:
+                    # Validate NFC session
+                    try:
+                        session = NFCSession.objects.get(
+                            session_token=session_token,
+                            patient=visit.patient
+                        )
+                        is_valid, error_code, error_message = session.validate_session()
+                        if is_valid:
+                            has_permission = True
+                        else:
+                            return Response({
+                                'status': False,
+                                'code': status.HTTP_401_UNAUTHORIZED,
+                                'message': error_message,
+                                'error_code': error_code
+                            }, status=status.HTTP_401_UNAUTHORIZED)
+                    except NFCSession.DoesNotExist:
+                        return Response({
+                            'status': False,
+                            'code': status.HTTP_401_UNAUTHORIZED,
+                            'message': 'Invalid session token'
+                        }, status=status.HTTP_401_UNAUTHORIZED)
+        
+        if not has_permission:
+            return Response({
+                'status': False,
+                'code': status.HTTP_403_FORBIDDEN,
+                'message': 'You do not have permission to view documents for this visit.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get all documents associated with this visit
+        documents = Document.objects.filter(visit=visit).order_by('-uploaded_at')
+        
+        # Serialize the documents
+        serializer = DocumentSerializer(documents, many=True)
+        
+        # Log session activity if session_token provided
+        if session_token:
+            try:
+                session = NFCSession.objects.get(session_token=session_token)
+                SessionActivity.log_activity(
+                    session=session,
+                    user=user,
+                    activity_type='view_document',
+                    visit=visit,
+                    details=f'Viewed {len(documents)} documents for visit'
+                )
+            except NFCSession.DoesNotExist:
+                pass
+        
+        return Response({
+            'status': True,
+            'code': status.HTTP_200_OK,
+            'message': 'Documents retrieved successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
     
     @action(detail=True, methods=['post'])
     def add_session(self, request, pk=None):

@@ -296,9 +296,7 @@ DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.RawMediaCloudinaryStorage'
 #     'handlers': {
 #         'console': {
 #             'class': 'logging.StreamHandler',
-#             'formatter': 'simple' if not PROD else 'json',
-#             'filters': ['request_context', 'exclude_autoreload'],
-#         },
+#             'formatter': 'simple' if not PROD else 'json', 'filters': ['request_context', 'exclude_autoreload'], },
 #         'file': {
 #             'class': 'logging.handlers.RotatingFileHandler',
 #             'filename': os.path.join(LOG_DIR, 'app.log'),
