@@ -47,14 +47,18 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
             # Get date filter from query parameters
             filter_date = self.request.query_params.get('date')
             date_range = self.request.query_params.get('date_range')
-            appointment_status = self.request.query_params.get('status', 'pending')  # Default to pending
+            appointment_status = self.request.query_params.get('status')  # Remove default 'pending' for admin
             
             base_queryset = PatientVisit.objects.none()
             
-            if user.is_staff:
+            # Check if user is admin (either staff or Admin user type)
+            is_admin_user = user.is_staff or (hasattr(user, 'user_type') and user.user_type and user.user_type.name == 'Admin')
+            
+            if is_admin_user:
+                # Admin users get all visits regardless of status
                 base_queryset = PatientVisit.objects.all().select_related('patient', 'attending_doctor', 'created_by')
                 
-            elif hasattr(user, 'user_type'):
+            elif hasattr(user, 'user_type') and user.user_type:
                 if user.user_type.name == 'Patient':
                     base_queryset = PatientVisit.objects.filter(patient=user).select_related('patient', 'attending_doctor', 'created_by')
                 
@@ -64,10 +68,12 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
                         attending_doctor=user
                     ).select_related('patient', 'attending_doctor', 'created_by')
             
-            # Filter by status (pending appointments for doctors, or all for calendar)
-            if user.user_type.name == 'Doctor':
-                if appointment_status != 'all':  # 'all' means show all statuses for calendar
-                    base_queryset = base_queryset.filter(status=appointment_status)
+            # Filter by status - only apply to non-admin users
+            if not is_admin_user and hasattr(user, 'user_type') and user.user_type and user.user_type.name == 'Doctor':
+                # Default to 'pending' for doctors if no status specified
+                status_filter = appointment_status if appointment_status else 'pending'
+                if status_filter != 'all':  # 'all' means show all statuses for calendar
+                    base_queryset = base_queryset.filter(status=status_filter)
             
             # Apply date filtering if provided
             if filter_date:
@@ -94,14 +100,18 @@ class PatientVisitViewSet(viewsets.ModelViewSet):
                     # Invalid date range format, ignore filter
                     pass
             
-            # Order by check_in_time for appointments
-            return base_queryset.order_by('check_in_time')
+            # Order by check_in_time in descending order (newest first) for admin dashboard
+            # For doctors' appointments, ascending order may be better for daily schedule
+            if is_admin_user:
+                final_queryset = base_queryset.order_by('-check_in_time')
+            else:
+                final_queryset = base_queryset.order_by('check_in_time')
+                
+            return final_queryset
             
         except Exception as exc:
-            # Log the error
-            import logging
-            logger = logging.getLogger('django.request')
-            logger.error(f"Error in PatientVisitViewSet.get_queryset: {str(exc)}")
+            # Log the error - using print for debugging
+            print(f"Error in PatientVisitViewSet.get_queryset: {str(exc)}")
             
             # Return empty queryset on error
             return PatientVisit.objects.none()
