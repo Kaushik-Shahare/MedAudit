@@ -19,19 +19,44 @@ def trigger_insurance_verification(insurance_form_id):
         # Get the insurance form
         insurance_form = InsuranceForm.objects.get(id=insurance_form_id)
         
-        # Create or get verification result object
-        verification_result, created = AIVerificationResult.objects.get_or_create(
+        # Check for existing incomplete verification result
+        existing_verification = AIVerificationResult.objects.filter(
             insurance_form=insurance_form,
-            defaults={'status': 'pending'}
-        )
+            status__in=['pending', 'in_progress']
+        ).order_by('-created_at').first()
         
-        # If verification is already completed or in progress, don't trigger again
-        if verification_result.status in ['completed', 'in_progress']:
-            logger.info(f"Verification already {verification_result.status} for insurance form {insurance_form_id}")
-            return f"Verification already {verification_result.status}"
+        if existing_verification:
+            # Use the existing incomplete verification
+            verification_result = existing_verification
+            created = False
+            logger.info(f"Found existing incomplete verification for insurance form {insurance_form_id}")
+        else:
+            # Create new verification result
+            verification_result = AIVerificationResult.objects.create(
+                insurance_form=insurance_form,
+                status='pending'
+            )
+            created = True
+            logger.info(f"Created new verification for insurance form {insurance_form_id}")
+        
+        # If verification is already in progress, don't trigger again
+        if verification_result.status == 'in_progress':
+            logger.info(f"Verification already in progress for insurance form {insurance_form_id}")
+            return f"Verification already in progress"
         
         # Mark as in progress
         verification_result.mark_as_in_progress()
+        
+        # Clean up old completed verification results to prevent database bloat
+        # Keep only the 5 most recent completed results per insurance form
+        old_results = AIVerificationResult.objects.filter(
+            insurance_form=insurance_form,
+            status='completed'
+        ).order_by('-completed_at')[5:]
+        
+        if old_results.exists():
+            old_result_ids = list(old_results.values_list('id', flat=True))
+            AIVerificationResult.objects.filter(id__in=old_result_ids).delete()
         
         # Start verification process
         _process_insurance_verification.delay(verification_result.id)

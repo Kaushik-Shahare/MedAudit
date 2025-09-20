@@ -20,21 +20,30 @@ def trigger_verification(request, insurance_form_id):
     # For GET requests, just return status
     if request.method == 'GET':
         try:
-            verification = AIVerificationResult.objects.get(insurance_form_id=insurance_form_id)
+            # Get the most recent verification result
+            verification = AIVerificationResult.objects.filter(
+                insurance_form_id=insurance_form_id
+            ).order_by('-created_at').first()
+            
+            if verification:
+                return Response({
+                    "insurance_form_id": insurance_form_id,
+                    "verification_status": verification.status,
+                    "is_approved": verification.is_approved,
+                    "created_at": verification.created_at,
+                    "completed_at": verification.completed_at,
+                    "message": f"Verification status for insurance form {insurance_form_id}"
+                })
+            else:
+                return Response({
+                    "insurance_form_id": insurance_form_id,
+                    "verification_status": "not_started",
+                    "message": "No verification has been started for this form yet. Use POST to start verification."
+                })
+        except Exception as e:
             return Response({
-                "insurance_form_id": insurance_form_id,
-                "verification_status": verification.status,
-                "is_approved": verification.is_approved,
-                "created_at": verification.created_at,
-                "completed_at": verification.completed_at,
-                "message": f"Verification status for insurance form {insurance_form_id}"
-            })
-        except AIVerificationResult.DoesNotExist:
-            return Response({
-                "insurance_form_id": insurance_form_id,
-                "verification_status": "not_started",
-                "message": "No verification has been started for this form yet. Use POST to start verification."
-            })
+                "error": f"Error retrieving verification status: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     # For POST requests, trigger verification
     # Check if user has permission to trigger verification
@@ -68,7 +77,17 @@ def verification_result(request, insurance_form_id):
         )
     
     try:
-        verification = AIVerificationResult.objects.get(insurance_form=insurance_form)
+        # Get the most recent verification result
+        verification = AIVerificationResult.objects.filter(
+            insurance_form=insurance_form
+        ).order_by('-created_at').first()
+        
+        if not verification:
+            return Response(
+                {"error": "No verification found for this insurance form"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
         eligible_verification = verification.eligibility_verification or {}
         diagnostic_verification = verification.diagnostic_verification or {}
         treatment_verification = verification.treatment_verification or {}
@@ -90,8 +109,8 @@ def verification_result(request, insurance_form_id):
             "created_at": verification.created_at,
             "completed_at": verification.completed_at
         })
-    except AIVerificationResult.DoesNotExist:
+    except Exception as e:
         return Response(
-            {"error": "No verification found for this insurance form"},
-            status=status.HTTP_404_NOT_FOUND
+            {"error": f"Error retrieving verification result: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
